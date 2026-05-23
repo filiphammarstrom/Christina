@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import Image from 'next/image'
 
 export const metadata: Metadata = {
   title: 'Om Christina — Christina Hammarström',
@@ -25,8 +26,15 @@ export default function AboutPage() {
       <div className="grid md:grid-cols-[1fr_1.6fr] gap-16 items-start">
         {/* Portrait image */}
         <div className="sticky top-28">
-          <div className="aspect-[3/4] bg-warm-dark flex items-center justify-center text-[#BBB] text-sm">
-            Porträttbild
+          <div className="relative aspect-[3/4] overflow-hidden bg-warm-dark">
+            <Image
+              src="/portrait.jpg"
+              alt="Christina Hammarström"
+              fill
+              className="object-cover object-top"
+              sizes="(max-width: 768px) 100vw, 40vw"
+              priority
+            />
           </div>
           <p className="text-xs text-[#AAA] mt-3 text-center">Christina Hammarström, Umeå</p>
         </div>
