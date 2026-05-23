@@ -1,3 +1,11 @@
+export interface Crop {
+  x: number
+  y: number
+  w: number
+  h: number
+  rotation?: number // degrees, applied after crop to straighten skewed photos
+}
+
 export interface GalleryPainting {
   id: string
   publicId: string
@@ -10,4 +18,7 @@ export interface GalleryPainting {
   price?: number
   available: boolean
   featured?: boolean
+  crop?: Crop
+  originalWidth?: number
+  originalHeight?: number
 }

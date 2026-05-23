@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import type { GalleryPainting } from '@/types/painting'
+import type { GalleryPainting, Crop } from '@/types/painting'
+import CropModal from './CropModal'
 
 interface Props {
   initialPaintings: GalleryPainting[]
@@ -46,7 +47,33 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
   const [processing, setProcessing] = useState<Set<string>>(new Set())
   const [processingAll, setProcessingAll] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [cropTarget, setCropTarget] = useState<GalleryPainting | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  function buildThumbnailUrl(publicId: string, crop?: Crop): string {
+    const parts: string[] = []
+    if (crop) {
+      parts.push(`c_crop,x_${crop.x},y_${crop.y},w_${crop.w},h_${crop.h}`)
+      if (crop.rotation) parts.push(`a_${crop.rotation}`)
+    }
+    parts.push('e_improve:indoor', 'e_vibrance:60', 'e_sharpen:80')
+    parts.push('w_900,c_limit,q_auto,f_auto')
+    return `https://res.cloudinary.com/${cloudName}/image/upload/${parts.join('/')}/${publicId}`
+  }
+
+  function handleCropSaved(crop: Crop) {
+    if (!cropTarget) return
+    const publicId = cropTarget.publicId
+    const newUrl = buildThumbnailUrl(publicId, crop) + `?v=${Date.now()}`
+    setPaintings(prev =>
+      prev.map(p =>
+        p.publicId === publicId
+          ? { ...p, crop, thumbnailUrl: newUrl, fullUrl: newUrl }
+          : p
+      )
+    )
+    setCropTarget(null)
+  }
 
   function startEdit(p: GalleryPainting) {
     setEditing(prev => ({ ...prev, [p.publicId]: toEditState(p) }))
@@ -252,7 +279,7 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
                         {p.price ? `${p.price.toLocaleString('sv-SE')} kr` : 'Inget pris'}
                       </p>
                       <p className="text-xs text-[#888] mb-3">{p.dimensions || 'Inga mått'}</p>
-                      <div className="flex gap-2">
+                      <div className="flex gap-1.5 flex-wrap">
                         <button
                           onClick={() => startEdit(p)}
                           className="flex-1 border border-[#1C1C1C] text-xs py-1.5 hover:bg-[#1C1C1C] hover:text-white transition-colors"
@@ -260,16 +287,23 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
                           Redigera
                         </button>
                         <button
+                          onClick={() => setCropTarget(p)}
+                          title="Beskär och räta upp"
+                          className="border border-[#DDD] text-[#888] text-xs py-1.5 px-2 hover:border-[#C4A35A] hover:text-[#C4A35A] transition-colors"
+                        >
+                          ✂
+                        </button>
+                        <button
                           onClick={() => fixOnePainting(p.publicId)}
                           disabled={isProcessing}
-                          title="Förbättra bild automatiskt"
-                          className="border border-[#DDD] text-[#888] text-xs py-1.5 px-2.5 hover:border-[#1C1C1C] disabled:opacity-30 transition-colors"
+                          title="Förbättra färger automatiskt"
+                          className="border border-[#DDD] text-[#888] text-xs py-1.5 px-2 hover:border-[#1C1C1C] disabled:opacity-30 transition-colors"
                         >
                           ✦
                         </button>
                         <button
                           onClick={() => deletePainting(p.publicId)}
-                          className="border border-[#DDD] text-[#AAA] text-xs py-1.5 px-2.5 hover:border-red-300 hover:text-red-400 transition-colors"
+                          className="border border-[#DDD] text-[#AAA] text-xs py-1.5 px-2 hover:border-red-300 hover:text-red-400 transition-colors"
                         >
                           ✕
                         </button>
@@ -339,6 +373,14 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
           })}
         </div>
       </div>
+
+      {cropTarget && (
+        <CropModal
+          painting={cropTarget}
+          onSave={handleCropSaved}
+          onClose={() => setCropTarget(null)}
+        />
+      )}
     </div>
   )
 }
