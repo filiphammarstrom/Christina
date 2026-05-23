@@ -66,6 +66,7 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
   async function runAutoCropForPainting(p: GalleryPainting): Promise<Corners | null> {
     const res = await fetch('/api/admin/auto-crop', {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ publicId: p.publicId, originalWidth: p.originalWidth, originalHeight: p.originalHeight }),
     })

@@ -1,6 +1,5 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { v2 as cloudinary } from 'cloudinary'
-import { cookies } from 'next/headers'
 import Anthropic from '@anthropic-ai/sdk'
 
 cloudinary.config({
@@ -9,12 +8,15 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 })
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-
-export async function POST(request: Request) {
-  const token = cookies().get('admin_token')?.value
+export async function POST(request: NextRequest) {
+  const token = request.cookies.get('admin_token')?.value
   if (token !== process.env.ADMIN_PASSWORD) {
-    return NextResponse.json({ error: 'Ej behörig' }, { status: 401 })
+    return NextResponse.json({ error: 'Ej behörig — logga ut och in igen' }, { status: 401 })
+  }
+
+  if (!process.env.ANTHROPIC_API_KEY) {
+    console.error('auto-crop: ANTHROPIC_API_KEY saknas')
+    return NextResponse.json({ error: 'ANTHROPIC_API_KEY saknas i miljövariabler' }, { status: 500 })
   }
 
   const { publicId, originalWidth, originalHeight } = await request.json()
@@ -22,50 +24,36 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Saknar publicId' }, { status: 400 })
   }
 
-  // Fetch a manageable version of the original (no enhancements applied)
+  // Use a Cloudinary URL directly — no need to fetch/buffer/base64
   const imageUrl = cloudinary.url(publicId, {
-    transformation: [{ width: 1200, crop: 'limit', quality: 85, fetch_format: 'jpg' }],
+    transformation: [{ width: 1200, crop: 'limit', quality: 80, fetch_format: 'jpg' }],
     secure: true,
   })
 
-  let base64Image: string
-  let fetchedWidth: number
-  let fetchedHeight: number
+  const scale = Math.min(1200 / (originalWidth ?? 1200), 1)
+  const fetchedWidth = Math.round((originalWidth ?? 1200) * scale)
+  const fetchedHeight = Math.round((originalHeight ?? 900) * scale)
 
-  try {
-    const res = await fetch(imageUrl)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const buffer = await res.arrayBuffer()
-    base64Image = Buffer.from(buffer).toString('base64')
+  const prompt = `This is a photo of a painting taken with a phone. It may show the painting on an easel or against a wall, with a visible frame, and possibly tilted or at an angle (perspective distortion).
 
-    const scale = Math.min(1200 / (originalWidth ?? 1200), 1)
-    fetchedWidth = Math.round((originalWidth ?? 1200) * scale)
-    fetchedHeight = Math.round((originalHeight ?? 900) * scale)
-  } catch (err) {
-    console.error('auto-crop: failed to fetch image', err)
-    return NextResponse.json({ error: 'Kunde inte hämta bilden' }, { status: 500 })
-  }
+Find the FOUR CORNERS of the PAINTED CANVAS — just inside the inner edge of any visible frame, excluding easel, wall, floor, or background.
 
-  const prompt = `This is a photo of a painting taken with a phone. The painting may be on an easel, leaning against a wall, or photographed at an angle, with a visible wooden frame, and possibly with room/floor/background visible. The photo may also be slightly or significantly tilted.
+If the painting is photographed at an angle (so it appears trapezoidal), mark the actual corners of the painting surface as they appear in the photo — not a simple bounding box. This enables full perspective correction.
 
-Find the FOUR CORNERS of the PAINTED CANVAS — ideally just inside the inner edge of any visible frame, excluding all easel, wall, floor, or other background.
-
-If the painting is photographed at an angle (perspective distortion — e.g. the top looks narrower than the bottom), mark the actual corners of the painting surface as it appears in the photo, not a simple bounding box. This allows perspective correction.
-
-Label the corners by their position ON THE PAINTING ITSELF (not on the photo):
-- tl = top-left corner of the painting
-- tr = top-right corner of the painting
-- br = bottom-right corner of the painting
-- bl = bottom-left corner of the painting
+Label corners by their position ON THE PAINTING ITSELF:
+- tl = top-left of the painting
+- tr = top-right of the painting
+- br = bottom-right of the painting
+- bl = bottom-left of the painting
 
 The image is ${fetchedWidth} × ${fetchedHeight} pixels.
 
-Return ONLY valid JSON, no explanation, no markdown:
+Return ONLY valid JSON, no explanation, no markdown fences:
 {"tl":{"x":N,"y":N},"tr":{"x":N,"y":N},"br":{"x":N,"y":N},"bl":{"x":N,"y":N}}`
 
-  let rawCorners: { tl: { x: number; y: number }; tr: { x: number; y: number }; br: { x: number; y: number }; bl: { x: number; y: number } }
-
   try {
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+
     const response = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 300,
@@ -75,7 +63,7 @@ Return ONLY valid JSON, no explanation, no markdown:
           content: [
             {
               type: 'image',
-              source: { type: 'base64', media_type: 'image/jpeg', data: base64Image },
+              source: { type: 'url', url: imageUrl },
             },
             { type: 'text', text: prompt },
           ],
@@ -83,23 +71,29 @@ Return ONLY valid JSON, no explanation, no markdown:
       ],
     })
 
-    const text = response.content[0].type === 'text' ? response.content[0].text : ''
+    const text = response.content[0].type === 'text' ? response.content[0].text.trim() : ''
+    console.log('auto-crop response:', text)
+
     const jsonMatch = text.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) throw new Error('No JSON in response')
-    rawCorners = JSON.parse(jsonMatch[0])
+    if (!jsonMatch) {
+      console.error('auto-crop: inget JSON i svar:', text)
+      return NextResponse.json({ error: 'Oväntat svar från AI' }, { status: 500 })
+    }
+
+    const raw = JSON.parse(jsonMatch[0])
+    const upscale = (originalWidth ?? fetchedWidth) / fetchedWidth
+
+    const corners = {
+      tl: { x: Math.round(raw.tl.x * upscale), y: Math.round(raw.tl.y * upscale) },
+      tr: { x: Math.round(raw.tr.x * upscale), y: Math.round(raw.tr.y * upscale) },
+      br: { x: Math.round(raw.br.x * upscale), y: Math.round(raw.br.y * upscale) },
+      bl: { x: Math.round(raw.bl.x * upscale), y: Math.round(raw.bl.y * upscale) },
+    }
+
+    return NextResponse.json(corners)
   } catch (err) {
-    console.error('auto-crop: Claude error', err)
-    return NextResponse.json({ error: 'AI-analys misslyckades' }, { status: 500 })
+    console.error('auto-crop: fel:', err)
+    const message = err instanceof Error ? err.message : String(err)
+    return NextResponse.json({ error: `AI-analys misslyckades: ${message}` }, { status: 500 })
   }
-
-  // Scale coordinates back up to original image dimensions
-  const scale = (originalWidth ?? fetchedWidth) / fetchedWidth
-  const corners = {
-    tl: { x: Math.round(rawCorners.tl.x * scale), y: Math.round(rawCorners.tl.y * scale) },
-    tr: { x: Math.round(rawCorners.tr.x * scale), y: Math.round(rawCorners.tr.y * scale) },
-    br: { x: Math.round(rawCorners.br.x * scale), y: Math.round(rawCorners.br.y * scale) },
-    bl: { x: Math.round(rawCorners.bl.x * scale), y: Math.round(rawCorners.bl.y * scale) },
-  }
-
-  return NextResponse.json(corners)
 }

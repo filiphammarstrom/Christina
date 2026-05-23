@@ -85,6 +85,7 @@ export default function CropModal({ painting, onSave, onClose }: Props) {
 
     const res = await fetch('/api/admin/auto-crop', {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         publicId: painting.publicId,
@@ -94,7 +95,8 @@ export default function CropModal({ painting, onSave, onClose }: Props) {
     })
 
     if (!res.ok) {
-      alert('Automatisk identifiering misslyckades. Flytta hörnen manuellt.')
+      const err = await res.json().catch(() => ({ error: 'Okänt fel' }))
+      alert(`AI-identifiering misslyckades:\n${err.error ?? res.status}`)
       setAutoDetecting(false)
       return
     }
