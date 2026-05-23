@@ -28,10 +28,23 @@ function toEditState(p: GalleryPainting): EditState {
   }
 }
 
+async function processImage(publicId: string): Promise<string | null> {
+  const res = await fetch('/api/admin/process-image', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ publicId }),
+  })
+  if (!res.ok) return null
+  const data = await res.json()
+  return data.url ?? null
+}
+
 export default function AdminGallery({ initialPaintings, cloudName }: Props) {
   const [paintings, setPaintings] = useState(initialPaintings)
   const [editing, setEditing] = useState<Record<string, EditState>>({})
   const [saving, setSaving] = useState<string | null>(null)
+  const [processing, setProcessing] = useState<Set<string>>(new Set())
+  const [processingAll, setProcessingAll] = useState(false)
   const [uploading, setUploading] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -79,7 +92,7 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
   }
 
   async function deletePainting(publicId: string) {
-    if (!confirm('Är du säker på att du vill ta bort den här tavlan?')) return
+    if (!confirm('Ta bort den här tavlan?')) return
 
     await fetch('/api/admin/delete-painting', {
       method: 'POST',
@@ -88,6 +101,27 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
     })
 
     setPaintings(prev => prev.filter(p => p.publicId !== publicId))
+  }
+
+  async function fixOnePainting(publicId: string) {
+    setProcessing(prev => new Set(prev).add(publicId))
+    const newUrl = await processImage(publicId)
+    if (newUrl) {
+      // Add cache-bust so img src actually refreshes
+      const busted = `${newUrl}?v=${Date.now()}`
+      setPaintings(prev =>
+        prev.map(p => p.publicId === publicId ? { ...p, thumbnailUrl: busted, fullUrl: busted } : p)
+      )
+    }
+    setProcessing(prev => { const s = new Set(prev); s.delete(publicId); return s })
+  }
+
+  async function fixAllPaintings() {
+    setProcessingAll(true)
+    for (const p of paintings) {
+      await fixOnePainting(p.publicId)
+    }
+    setProcessingAll(false)
   }
 
   async function handleUpload(files: FileList | null) {
@@ -120,6 +154,9 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
           available: true,
         }
         setPaintings(prev => [newPainting, ...prev])
+
+        // Auto-fix immediately after upload
+        await fixOnePainting(data.public_id)
       }
     }
 
@@ -134,21 +171,25 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
   return (
     <div>
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-white border-b border-[#E5E5E5] px-6 py-4 flex items-center justify-between">
+      <div className="sticky top-0 z-10 bg-white border-b border-[#E5E5E5] px-6 py-4 flex items-center justify-between gap-4 flex-wrap">
         <h1 className="font-serif text-xl">Christinas verk — Admin</h1>
         <div className="flex items-center gap-4">
           <span className="text-sm text-[#999]">{paintings.length} tavlor</span>
           <button
-            onClick={handleLogout}
-            className="text-sm text-[#999] hover:text-[#1C1C1C]"
+            onClick={fixAllPaintings}
+            disabled={processingAll}
+            className="text-sm border border-[#CCC] px-3 py-1.5 hover:border-[#1C1C1C] disabled:opacity-40 transition-colors"
           >
+            {processingAll ? 'Förbättrar…' : '✦ Förbättra alla bilder'}
+          </button>
+          <button onClick={handleLogout} className="text-sm text-[#999] hover:text-[#1C1C1C]">
             Logga ut
           </button>
         </div>
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-8">
-        {/* Upload */}
+        {/* Upload zone */}
         <div
           className="mb-10 border-2 border-dashed border-[#CCC] rounded p-10 text-center cursor-pointer hover:border-[#1C1C1C] transition-colors"
           onClick={() => fileRef.current?.click()}
@@ -164,11 +205,16 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
             onChange={e => handleUpload(e.target.files)}
           />
           {uploading ? (
-            <p className="text-[#888]">Laddar upp…</p>
+            <p className="text-[#888]">Laddar upp och förbättrar automatiskt…</p>
           ) : (
             <>
               <p className="text-lg mb-1">Dra och släpp bilder här</p>
-              <p className="text-sm text-[#888]">eller klicka för att välja — flera bilder åt gången</p>
+              <p className="text-sm text-[#888]">
+                eller klicka för att välja — flera bilder åt gången
+              </p>
+              <p className="text-xs text-[#AAA] mt-2">
+                Färger, skärpa och beskärning förbättras automatiskt
+              </p>
             </>
           )}
         </div>
@@ -177,22 +223,34 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {paintings.map(p => {
             const edit = editing[p.publicId]
+            const isProcessing = processing.has(p.publicId)
+
             return (
               <div key={p.publicId} className="bg-white border border-[#E5E5E5] overflow-hidden">
                 {/* Image */}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={p.thumbnailUrl}
-                  alt={p.title ?? 'Tavla'}
-                  className="w-full aspect-square object-cover"
-                />
+                <div className="relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={p.thumbnailUrl}
+                    alt={p.title ?? 'Tavla'}
+                    className={`w-full aspect-square object-cover transition-opacity ${isProcessing ? 'opacity-40' : ''}`}
+                  />
+                  {isProcessing && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="text-sm text-[#555] bg-white/80 px-3 py-1 rounded">Förbättrar…</span>
+                    </div>
+                  )}
+                </div>
 
                 <div className="p-4">
                   {!edit ? (
-                    /* View mode */
                     <>
-                      <p className="font-medium text-sm truncate mb-1">{p.title || <span className="text-[#AAA] italic">Utan titel</span>}</p>
-                      <p className="text-xs text-[#888] mb-1">{p.price ? `${p.price.toLocaleString('sv-SE')} kr` : 'Inget pris'}</p>
+                      <p className="font-medium text-sm truncate mb-1">
+                        {p.title || <span className="text-[#AAA] italic">Utan titel</span>}
+                      </p>
+                      <p className="text-xs text-[#888] mb-1">
+                        {p.price ? `${p.price.toLocaleString('sv-SE')} kr` : 'Inget pris'}
+                      </p>
                       <p className="text-xs text-[#888] mb-3">{p.dimensions || 'Inga mått'}</p>
                       <div className="flex gap-2">
                         <button
@@ -202,15 +260,22 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
                           Redigera
                         </button>
                         <button
+                          onClick={() => fixOnePainting(p.publicId)}
+                          disabled={isProcessing}
+                          title="Förbättra bild automatiskt"
+                          className="border border-[#DDD] text-[#888] text-xs py-1.5 px-2.5 hover:border-[#1C1C1C] disabled:opacity-30 transition-colors"
+                        >
+                          ✦
+                        </button>
+                        <button
                           onClick={() => deletePainting(p.publicId)}
-                          className="border border-[#DDD] text-[#AAA] text-xs py-1.5 px-3 hover:border-red-300 hover:text-red-400 transition-colors"
+                          className="border border-[#DDD] text-[#AAA] text-xs py-1.5 px-2.5 hover:border-red-300 hover:text-red-400 transition-colors"
                         >
                           ✕
                         </button>
                       </div>
                     </>
                   ) : (
-                    /* Edit mode */
                     <div className="space-y-2">
                       <input
                         placeholder="Titel"
@@ -220,6 +285,7 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
                       />
                       <input
                         placeholder="Pris (kr)"
+                        type="number"
                         value={edit.price}
                         onChange={e => setEditing(prev => ({ ...prev, [p.publicId]: { ...prev[p.publicId], price: e.target.value } }))}
                         className="w-full border border-[#DDD] px-2 py-1.5 text-xs focus:outline-none focus:border-[#1C1C1C]"
@@ -231,13 +297,13 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
                         className="w-full border border-[#DDD] px-2 py-1.5 text-xs focus:outline-none focus:border-[#1C1C1C]"
                       />
                       <input
-                        placeholder="Teknik"
+                        placeholder="Teknik (t.ex. Olja på pannå)"
                         value={edit.technique}
                         onChange={e => setEditing(prev => ({ ...prev, [p.publicId]: { ...prev[p.publicId], technique: e.target.value } }))}
                         className="w-full border border-[#DDD] px-2 py-1.5 text-xs focus:outline-none focus:border-[#1C1C1C]"
                       />
                       <input
-                        placeholder="År"
+                        placeholder="År (t.ex. 2024)"
                         value={edit.year}
                         onChange={e => setEditing(prev => ({ ...prev, [p.publicId]: { ...prev[p.publicId], year: e.target.value } }))}
                         className="w-full border border-[#DDD] px-2 py-1.5 text-xs focus:outline-none focus:border-[#1C1C1C]"
