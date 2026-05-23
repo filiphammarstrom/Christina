@@ -48,6 +48,8 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
   const [processingAll, setProcessingAll] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [cropTarget, setCropTarget] = useState<GalleryPainting | null>(null)
+  const [autoCroppingAll, setAutoCroppingAll] = useState(false)
+  const [autoCropProgress, setAutoCropProgress] = useState<{ done: number; total: number } | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   function buildThumbnailUrl(publicId: string, crop?: Crop): string {
@@ -59,6 +61,41 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
     parts.push('e_improve:indoor', 'e_vibrance:60', 'e_sharpen:80')
     parts.push('w_900,c_limit,q_auto,f_auto')
     return `https://res.cloudinary.com/${cloudName}/image/upload/${parts.join('/')}/${publicId}`
+  }
+
+  async function autoCropAll() {
+    if (!confirm(`Automatisk AI-beskärning för alla ${paintings.length} tavlor. Det tar ett tag. Fortsätta?`)) return
+    setAutoCroppingAll(true)
+    setAutoCropProgress({ done: 0, total: paintings.length })
+
+    for (let i = 0; i < paintings.length; i++) {
+      const p = paintings[i]
+      try {
+        const res = await fetch('/api/admin/auto-crop', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ publicId: p.publicId, originalWidth: p.originalWidth, originalHeight: p.originalHeight }),
+        })
+        if (res.ok) {
+          const crop: Crop & { rotation?: number } = await res.json()
+          await fetch('/api/admin/save-crop', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ publicId: p.publicId, ...crop }),
+          })
+          const newUrl = buildThumbnailUrl(p.publicId, crop) + `?v=${Date.now()}`
+          setPaintings(prev =>
+            prev.map(pp => pp.publicId === p.publicId ? { ...pp, crop, thumbnailUrl: newUrl } : pp)
+          )
+        }
+      } catch {
+        // skip failed ones silently
+      }
+      setAutoCropProgress({ done: i + 1, total: paintings.length })
+    }
+
+    setAutoCroppingAll(false)
+    setAutoCropProgress(null)
   }
 
   function handleCropSaved(crop: Crop) {
@@ -203,8 +240,17 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
         <div className="flex items-center gap-4">
           <span className="text-sm text-[#999]">{paintings.length} tavlor</span>
           <button
+            onClick={autoCropAll}
+            disabled={autoCroppingAll || processingAll}
+            className="text-sm border border-[#C4A35A] text-[#C4A35A] px-3 py-1.5 hover:bg-[#C4A35A] hover:text-white disabled:opacity-40 transition-colors"
+          >
+            {autoCroppingAll
+              ? `✂ Beskär ${autoCropProgress?.done ?? 0}/${autoCropProgress?.total ?? 0}…`
+              : '✂ Auto-beskär alla'}
+          </button>
+          <button
             onClick={fixAllPaintings}
-            disabled={processingAll}
+            disabled={processingAll || autoCroppingAll}
             className="text-sm border border-[#CCC] px-3 py-1.5 hover:border-[#1C1C1C] disabled:opacity-40 transition-colors"
           >
             {processingAll ? 'Förbättrar…' : '✦ Förbättra alla bilder'}

@@ -24,6 +24,7 @@ export default function CropModal({ painting, onSave, onClose }: Props) {
   const [selection, setSelection] = useState<SelectionRect | null>(null)
   const [rotation, setRotation] = useState(painting.crop?.rotation ?? 0)
   const [saving, setSaving] = useState(false)
+  const [autoDetecting, setAutoDetecting] = useState(false)
 
   // Restore existing crop as display-space selection after image loads
   useEffect(() => {
@@ -96,6 +97,44 @@ export default function CropModal({ painting, onSave, onClose }: Props) {
 
   const hasCrop = !!selection && selection.w > 20 && selection.h > 20
 
+  async function handleAutoDetect() {
+    if (!imgRef.current) return
+    setAutoDetecting(true)
+
+    const res = await fetch('/api/admin/auto-crop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        publicId: painting.publicId,
+        originalWidth: painting.originalWidth,
+        originalHeight: painting.originalHeight,
+      }),
+    })
+
+    if (!res.ok) {
+      alert('Automatisk identifiering misslyckades. Försök rita manuellt.')
+      setAutoDetecting(false)
+      return
+    }
+
+    const crop = await res.json() as { x: number; y: number; w: number; h: number; rotation: number }
+    setRotation(crop.rotation ?? 0)
+
+    // Convert original pixel coords → display coords
+    const img = imgRef.current
+    const rect = img.getBoundingClientRect()
+    const scaleX = rect.width / (painting.originalWidth ?? rect.width)
+    const scaleY = rect.height / (painting.originalHeight ?? rect.height)
+    setSelection({
+      x: crop.x * scaleX,
+      y: crop.y * scaleY,
+      w: crop.w * scaleX,
+      h: crop.h * scaleY,
+    })
+
+    setAutoDetecting(false)
+  }
+
   async function handleSave() {
     if (!hasCrop || !selection) {
       alert('Rita ett rektangel runt tavlan först.')
@@ -153,13 +192,26 @@ export default function CropModal({ painting, onSave, onClose }: Props) {
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-auto flex flex-col items-center gap-5 p-6">
-        {/* Instructions */}
-        <p className="text-white/60 text-sm text-center max-w-xl">
-          <strong className="text-white/80">Steg 1:</strong> Dra en rektangel runt{' '}
-          <em>bara tavlan</em> — utanför ramen och stafflin.
-          &nbsp;
-          <strong className="text-white/80">Steg 2:</strong> Räta upp med skjutreglaget om bilden är sned.
-        </p>
+        {/* Auto-detect + instructions */}
+        <div className="flex flex-col items-center gap-3 max-w-xl w-full">
+          <button
+            onClick={handleAutoDetect}
+            disabled={autoDetecting || !loaded}
+            className="w-full bg-white/10 hover:bg-white/20 disabled:opacity-40 border border-white/20 text-white text-sm px-5 py-2.5 transition-colors flex items-center justify-center gap-2"
+          >
+            {autoDetecting ? (
+              <>
+                <span className="inline-block w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                Analyserar bild med AI…
+              </>
+            ) : (
+              <>✦ Identifiera automatiskt med AI</>
+            )}
+          </button>
+          <p className="text-white/40 text-xs text-center">
+            eller rita manuellt: dra en rektangel runt tavlan och räta upp med skjutreglaget
+          </p>
+        </div>
 
         {/* Image + crop overlay */}
         <div
