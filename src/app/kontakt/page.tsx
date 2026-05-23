@@ -6,7 +6,7 @@ export const metadata: Metadata = {
 }
 
 export default function ContactPage() {
-  const mailtoLink = `mailto:filiparturfilm@gmail.com?subject=${encodeURIComponent('Förfrågan')}`
+  const mailtoLink = `mailto:info@christinahammarstrom.se?subject=${encodeURIComponent('Förfrågan')}`
 
   return (
     <div className="max-w-2xl mx-auto px-6 py-12">

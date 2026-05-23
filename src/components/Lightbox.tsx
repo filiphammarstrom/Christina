@@ -32,7 +32,7 @@ export default function Lightbox({ painting, onClose, onPrev, onNext, hasPrev, h
   const body = encodeURIComponent(
     `Hej Christina,\n\nJag är intresserad av tavlan "${painting.title || 'utan titel'}"${painting.dimensions ? ` (${painting.dimensions})` : ''}.\n\nMed vänliga hälsningar,`
   )
-  const mailtoLink = `mailto:christina@example.com?subject=${subject}&body=${body}`
+  const mailtoLink = `mailto:info@christinahammarstrom.se?subject=${subject}&body=${body}`
 
   return (
     <div
