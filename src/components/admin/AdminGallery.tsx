@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import type { GalleryPainting } from '@/types/painting'
+import type { GalleryPainting, Corners } from '@/types/painting'
+import CropModal from './CropModal'
 
 interface Props {
   initialPaintings: GalleryPainting[]
@@ -46,7 +47,75 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
   const [processing, setProcessing] = useState<Set<string>>(new Set())
   const [processingAll, setProcessingAll] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [cropTarget, setCropTarget] = useState<GalleryPainting | null>(null)
+  const [autoCroppingAll, setAutoCroppingAll] = useState(false)
+  const [autoCropProgress, setAutoCropProgress] = useState<{ done: number; total: number } | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  function buildThumbnailUrl(publicId: string, corners?: Corners): string {
+    const parts: string[] = []
+    if (corners) {
+      const { tl, tr, br, bl } = corners
+      parts.push(`e_distort:${tl.x}:${tl.y}:${tr.x}:${tr.y}:${br.x}:${br.y}:${bl.x}:${bl.y}`)
+    }
+    parts.push('e_improve:indoor', 'e_vibrance:60', 'e_sharpen:80')
+    parts.push('w_900,c_limit,q_auto,f_auto')
+    return `https://res.cloudinary.com/${cloudName}/image/upload/${parts.join('/')}/${publicId}`
+  }
+
+  async function runAutoCropForPainting(p: GalleryPainting): Promise<Corners | null> {
+    const res = await fetch('/api/admin/auto-crop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ publicId: p.publicId, originalWidth: p.originalWidth, originalHeight: p.originalHeight }),
+    })
+    if (!res.ok) return null
+    return res.json()
+  }
+
+  async function saveCorners(publicId: string, corners: Corners) {
+    await fetch('/api/admin/save-crop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ publicId, corners }),
+    })
+  }
+
+  function applyCornersToPainting(publicId: string, corners: Corners) {
+    const newUrl = buildThumbnailUrl(publicId, corners) + `?v=${Date.now()}`
+    setPaintings(prev =>
+      prev.map(p => p.publicId === publicId ? { ...p, corners, thumbnailUrl: newUrl } : p)
+    )
+  }
+
+  async function autoCropAll() {
+    if (!confirm(`Automatisk AI-beskärning för alla ${paintings.length} tavlor. Det tar ett tag. Fortsätta?`)) return
+    setAutoCroppingAll(true)
+    setAutoCropProgress({ done: 0, total: paintings.length })
+
+    for (let i = 0; i < paintings.length; i++) {
+      const p = paintings[i]
+      try {
+        const corners = await runAutoCropForPainting(p)
+        if (corners) {
+          await saveCorners(p.publicId, corners)
+          applyCornersToPainting(p.publicId, corners)
+        }
+      } catch {
+        // skip failed
+      }
+      setAutoCropProgress({ done: i + 1, total: paintings.length })
+    }
+
+    setAutoCroppingAll(false)
+    setAutoCropProgress(null)
+  }
+
+  function handleCropSaved(corners: Corners) {
+    if (!cropTarget) return
+    applyCornersToPainting(cropTarget.publicId, corners)
+    setCropTarget(null)
+  }
 
   function startEdit(p: GalleryPainting) {
     setEditing(prev => ({ ...prev, [p.publicId]: toEditState(p) }))
@@ -107,7 +176,6 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
     setProcessing(prev => new Set(prev).add(publicId))
     const newUrl = await processImage(publicId)
     if (newUrl) {
-      // Add cache-bust so img src actually refreshes
       const busted = `${newUrl}?v=${Date.now()}`
       setPaintings(prev =>
         prev.map(p => p.publicId === publicId ? { ...p, thumbnailUrl: busted, fullUrl: busted } : p)
@@ -152,11 +220,18 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
           thumbnailUrl: data.secure_url,
           fullUrl: data.secure_url,
           available: true,
+          originalWidth: data.width,
+          originalHeight: data.height,
         }
         setPaintings(prev => [newPainting, ...prev])
 
-        // Auto-fix immediately after upload
-        await fixOnePainting(data.public_id)
+        // Auto-crop with AI immediately after upload (in background — don't block next file)
+        runAutoCropForPainting(newPainting).then(corners => {
+          if (corners) {
+            saveCorners(data.public_id, corners)
+            applyCornersToPainting(data.public_id, corners)
+          }
+        })
       }
     }
 
@@ -173,11 +248,20 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
       {/* Header */}
       <div className="sticky top-0 z-10 bg-white border-b border-[#E5E5E5] px-6 py-4 flex items-center justify-between gap-4 flex-wrap">
         <h1 className="font-serif text-xl">Christinas verk — Admin</h1>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 flex-wrap">
           <span className="text-sm text-[#999]">{paintings.length} tavlor</span>
           <button
+            onClick={autoCropAll}
+            disabled={autoCroppingAll || processingAll}
+            className="text-sm border border-[#C4A35A] text-[#C4A35A] px-3 py-1.5 hover:bg-[#C4A35A] hover:text-white disabled:opacity-40 transition-colors"
+          >
+            {autoCroppingAll
+              ? `✂ Beskär ${autoCropProgress?.done ?? 0}/${autoCropProgress?.total ?? 0}…`
+              : '✂ Auto-beskär alla'}
+          </button>
+          <button
             onClick={fixAllPaintings}
-            disabled={processingAll}
+            disabled={processingAll || autoCroppingAll}
             className="text-sm border border-[#CCC] px-3 py-1.5 hover:border-[#1C1C1C] disabled:opacity-40 transition-colors"
           >
             {processingAll ? 'Förbättrar…' : '✦ Förbättra alla bilder'}
@@ -205,7 +289,7 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
             onChange={e => handleUpload(e.target.files)}
           />
           {uploading ? (
-            <p className="text-[#888]">Laddar upp och förbättrar automatiskt…</p>
+            <p className="text-[#888]">Laddar upp och identifierar automatiskt med AI…</p>
           ) : (
             <>
               <p className="text-lg mb-1">Dra och släpp bilder här</p>
@@ -213,7 +297,7 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
                 eller klicka för att välja — flera bilder åt gången
               </p>
               <p className="text-xs text-[#AAA] mt-2">
-                Färger, skärpa och beskärning förbättras automatiskt
+                AI identifierar och korrigerar perspektiv automatiskt efter uppladdning
               </p>
             </>
           )}
@@ -240,6 +324,12 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
                       <span className="text-sm text-[#555] bg-white/80 px-3 py-1 rounded">Förbättrar…</span>
                     </div>
                   )}
+                  {/* Corner indicator */}
+                  {p.corners && !isProcessing && (
+                    <div className="absolute top-1.5 right-1.5 bg-[#C4A35A]/90 text-white text-[10px] px-1.5 py-0.5 rounded">
+                      ✂ beskärd
+                    </div>
+                  )}
                 </div>
 
                 <div className="p-4">
@@ -252,7 +342,7 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
                         {p.price ? `${p.price.toLocaleString('sv-SE')} kr` : 'Inget pris'}
                       </p>
                       <p className="text-xs text-[#888] mb-3">{p.dimensions || 'Inga mått'}</p>
-                      <div className="flex gap-2">
+                      <div className="flex gap-1.5 flex-wrap">
                         <button
                           onClick={() => startEdit(p)}
                           className="flex-1 border border-[#1C1C1C] text-xs py-1.5 hover:bg-[#1C1C1C] hover:text-white transition-colors"
@@ -260,16 +350,23 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
                           Redigera
                         </button>
                         <button
+                          onClick={() => setCropTarget(p)}
+                          title="Beskär och korrigera perspektiv"
+                          className="border border-[#DDD] text-[#888] text-xs py-1.5 px-2 hover:border-[#C4A35A] hover:text-[#C4A35A] transition-colors"
+                        >
+                          ✂
+                        </button>
+                        <button
                           onClick={() => fixOnePainting(p.publicId)}
                           disabled={isProcessing}
-                          title="Förbättra bild automatiskt"
-                          className="border border-[#DDD] text-[#888] text-xs py-1.5 px-2.5 hover:border-[#1C1C1C] disabled:opacity-30 transition-colors"
+                          title="Förbättra färger automatiskt"
+                          className="border border-[#DDD] text-[#888] text-xs py-1.5 px-2 hover:border-[#1C1C1C] disabled:opacity-30 transition-colors"
                         >
                           ✦
                         </button>
                         <button
                           onClick={() => deletePainting(p.publicId)}
-                          className="border border-[#DDD] text-[#AAA] text-xs py-1.5 px-2.5 hover:border-red-300 hover:text-red-400 transition-colors"
+                          className="border border-[#DDD] text-[#AAA] text-xs py-1.5 px-2 hover:border-red-300 hover:text-red-400 transition-colors"
                         >
                           ✕
                         </button>
@@ -339,6 +436,14 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
           })}
         </div>
       </div>
+
+      {cropTarget && (
+        <CropModal
+          painting={cropTarget}
+          onSave={handleCropSaved}
+          onClose={() => setCropTarget(null)}
+        />
+      )}
     </div>
   )
 }
