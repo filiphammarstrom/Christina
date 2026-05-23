@@ -94,7 +94,8 @@ export default function CropModal({ painting, onSave, onClose }: Props) {
     })
 
     if (!res.ok) {
-      alert('Automatisk identifiering misslyckades. Flytta hörnen manuellt.')
+      const err = await res.json().catch(() => ({ error: 'Okänt fel' }))
+      alert(`AI-identifiering misslyckades:\n${err.error ?? res.status}`)
       setAutoDetecting(false)
       return
     }
