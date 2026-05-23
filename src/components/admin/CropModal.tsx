@@ -85,6 +85,7 @@ export default function CropModal({ painting, onSave, onClose }: Props) {
 
     const res = await fetch('/api/admin/auto-crop', {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         publicId: painting.publicId,
