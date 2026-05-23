@@ -1,31 +1,14 @@
 import Gallery from '@/components/Gallery'
 import { fetchAllPaintings } from '@/lib/cloudinary'
-import { getMetaForPainting } from '@/data/paintings'
 import type { GalleryPainting } from '@/types/painting'
 
-export const revalidate = 3600 // Uppdatera galleriet max 1 gång per timme
+export const revalidate = 3600
 
 export default async function HomePage() {
   let paintings: GalleryPainting[] = []
 
   try {
-    const cloudinaryPaintings = await fetchAllPaintings()
-    paintings = cloudinaryPaintings.map((cp, index) => {
-      const meta = getMetaForPainting(cp.publicId)
-      return {
-        id: cp.publicId,
-        publicId: cp.publicId,
-        thumbnailUrl: cp.thumbnailUrl,
-        fullUrl: cp.fullUrl,
-        title: meta?.title,
-        year: meta?.year,
-        dimensions: meta?.dimensions,
-        technique: meta?.technique ?? 'Olja på pannå',
-        price: meta?.price,
-        available: meta?.available ?? true,
-        featured: meta?.featured ?? false,
-      }
-    })
+    paintings = await fetchAllPaintings()
   } catch (error) {
     console.error('Kunde inte hämta bilder från Cloudinary:', error)
   }
