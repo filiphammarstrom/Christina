@@ -1,14 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import Image from 'next/image'
 import Lightbox from './Lightbox'
-import type { Painting } from '@/data/paintings'
+import type { GalleryPainting } from '@/types/painting'
 
 type Filter = 'all' | 'available' | 'sold'
 
 interface Props {
-  paintings: Painting[]
+  paintings: GalleryPainting[]
 }
 
 export default function Gallery({ paintings }: Props) {
@@ -48,7 +47,11 @@ export default function Gallery({ paintings }: Props) {
           >
             {f === 'all' ? 'Alla' : f === 'available' ? 'Till salu' : 'Sålda'}
             <span className="ml-1.5 text-xs opacity-60">
-              {f === 'all' ? paintings.length : f === 'available' ? paintings.filter(p => p.available).length : paintings.filter(p => !p.available).length}
+              {f === 'all'
+                ? paintings.length
+                : f === 'available'
+                ? paintings.filter(p => p.available).length
+                : paintings.filter(p => !p.available).length}
             </span>
           </button>
         ))}
@@ -63,13 +66,12 @@ export default function Gallery({ paintings }: Props) {
             onClick={() => setSelectedIndex(index)}
           >
             <div className="relative overflow-hidden bg-warm-dark">
-              <Image
-                src={`/paintings/${painting.filename}`}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={painting.thumbnailUrl}
                 alt={painting.title || 'Målning av Christina Hammarström'}
-                width={600}
-                height={600}
                 className="w-full h-auto object-cover transition-transform duration-500 group-hover:scale-[1.02]"
-                sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1280px) 33vw, 25vw"
+                loading="lazy"
               />
 
               {/* Hover overlay */}
@@ -103,7 +105,7 @@ export default function Gallery({ paintings }: Props) {
       </div>
 
       {/* Lightbox */}
-      {selected && selectedIndex !== null && (
+      {selected !== null && selectedIndex !== null && (
         <Lightbox
           painting={selected}
           onClose={() => setSelectedIndex(null)}

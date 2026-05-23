@@ -1,11 +1,10 @@
 'use client'
 
 import { useEffect, useCallback } from 'react'
-import Image from 'next/image'
-import type { Painting } from '@/data/paintings'
+import type { GalleryPainting } from '@/types/painting'
 
 interface Props {
-  painting: Painting
+  painting: GalleryPainting
   onClose: () => void
   onPrev?: () => void
   onNext?: () => void
@@ -30,8 +29,10 @@ export default function Lightbox({ painting, onClose, onPrev, onNext, hasPrev, h
   }, [handleKeyDown])
 
   const subject = encodeURIComponent(`Förfrågan om "${painting.title || 'tavla'}"`)
-  const body = encodeURIComponent(`Hej Christina,\n\nJag är intresserad av tavlan "${painting.title || 'utan titel'}"${painting.dimensions ? ` (${painting.dimensions})` : ''}.\n\nMed vänliga hälsningar,`)
-  const mailtoLink = `mailto:filiparturfilm@gmail.com?subject=${subject}&body=${body}`
+  const body = encodeURIComponent(
+    `Hej Christina,\n\nJag är intresserad av tavlan "${painting.title || 'utan titel'}"${painting.dimensions ? ` (${painting.dimensions})` : ''}.\n\nMed vänliga hälsningar,`
+  )
+  const mailtoLink = `mailto:christina@example.com?subject=${subject}&body=${body}`
 
   return (
     <div
@@ -39,7 +40,7 @@ export default function Lightbox({ painting, onClose, onPrev, onNext, hasPrev, h
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-6xl flex flex-col lg:flex-row gap-0 bg-warm shadow-2xl max-h-[90vh]"
+        className="relative w-full max-w-6xl flex flex-col lg:flex-row bg-warm shadow-2xl max-h-[90vh]"
         onClick={e => e.stopPropagation()}
       >
         {/* Close */}
@@ -52,17 +53,14 @@ export default function Lightbox({ painting, onClose, onPrev, onNext, hasPrev, h
         </button>
 
         {/* Image */}
-        <div className="relative lg:flex-1 bg-[#F0EDE7] flex items-center justify-center min-h-[300px] lg:min-h-[500px]">
-          <Image
-            src={`/paintings/${painting.filename}`}
+        <div className="relative lg:flex-1 bg-[#F0EDE7] flex items-center justify-center min-h-[300px]">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={painting.fullUrl}
             alt={painting.title || 'Målning av Christina Hammarström'}
-            width={800}
-            height={800}
             className="object-contain max-h-[60vh] lg:max-h-[85vh] w-auto"
-            priority
           />
 
-          {/* Prev/Next arrows */}
           {hasPrev && (
             <button
               onClick={onPrev}
@@ -87,9 +85,9 @@ export default function Lightbox({ painting, onClose, onPrev, onNext, hasPrev, h
         <div className="lg:w-72 xl:w-80 p-8 flex flex-col justify-between border-t lg:border-t-0 lg:border-l border-warm-dark">
           <div>
             {painting.title && (
-              <h2 className="font-serif text-2xl mb-3">{painting.title}</h2>
+              <h2 className="font-serif text-2xl mb-4">{painting.title}</h2>
             )}
-            <dl className="space-y-2 text-sm text-[#555]">
+            <dl className="space-y-2.5 text-sm text-[#555]">
               {painting.year && (
                 <div className="flex gap-2">
                   <dt className="text-[#999] w-24 shrink-0">År</dt>
