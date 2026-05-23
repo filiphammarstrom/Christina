@@ -3,7 +3,14 @@ export interface Crop {
   y: number
   w: number
   h: number
-  rotation?: number // degrees, applied after crop to straighten skewed photos
+  rotation?: number
+}
+
+export interface Corners {
+  tl: { x: number; y: number }
+  tr: { x: number; y: number }
+  br: { x: number; y: number }
+  bl: { x: number; y: number }
 }
 
 export interface GalleryPainting {
@@ -19,6 +26,7 @@ export interface GalleryPainting {
   available: boolean
   featured?: boolean
   crop?: Crop
+  corners?: Corners
   originalWidth?: number
   originalHeight?: number
 }

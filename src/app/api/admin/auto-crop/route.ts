@@ -22,7 +22,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Saknar publicId' }, { status: 400 })
   }
 
-  // Fetch a reasonably-sized version of the original image (no enhancements)
+  // Fetch a manageable version of the original (no enhancements applied)
   const imageUrl = cloudinary.url(publicId, {
     transformation: [{ width: 1200, crop: 'limit', quality: 85, fetch_format: 'jpg' }],
     secure: true,
@@ -38,8 +38,6 @@ export async function POST(request: Request) {
     const buffer = await res.arrayBuffer()
     base64Image = Buffer.from(buffer).toString('base64')
 
-    // The fetched image is scaled down — figure out actual fetched dimensions
-    // by capping originalWidth at 1200 and scaling proportionally
     const scale = Math.min(1200 / (originalWidth ?? 1200), 1)
     fetchedWidth = Math.round((originalWidth ?? 1200) * scale)
     fetchedHeight = Math.round((originalHeight ?? 900) * scale)
@@ -48,21 +46,29 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Kunde inte hämta bilden' }, { status: 500 })
   }
 
-  const prompt = `This is a photo of a painting. The photo was taken with a phone and may show the painting on an easel, leaning against a wall, or with visible frame, floor, room, or background.
+  const prompt = `This is a photo of a painting taken with a phone. The painting may be on an easel, leaning against a wall, or photographed at an angle, with a visible wooden frame, and possibly with room/floor/background visible. The photo may also be slightly or significantly tilted.
 
-Your task: identify the rectangular region containing ONLY the painted canvas — ideally just inside or at the inner edge of any frame, and excluding any easel, wall, floor, or surroundings.
+Find the FOUR CORNERS of the PAINTED CANVAS — ideally just inside the inner edge of any visible frame, excluding all easel, wall, floor, or other background.
 
-Also detect if the painting is slightly tilted and report the degrees needed to straighten it (positive = rotate clockwise, negative = counterclockwise).
+If the painting is photographed at an angle (perspective distortion — e.g. the top looks narrower than the bottom), mark the actual corners of the painting surface as it appears in the photo, not a simple bounding box. This allows perspective correction.
 
-The fetched image is ${fetchedWidth} × ${fetchedHeight} pixels. Return ONLY valid JSON, no explanation:
-{"x": <pixels from left>, "y": <pixels from top>, "w": <width px>, "h": <height px>, "rotation": <degrees, 0 if already straight>}`
+Label the corners by their position ON THE PAINTING ITSELF (not on the photo):
+- tl = top-left corner of the painting
+- tr = top-right corner of the painting
+- br = bottom-right corner of the painting
+- bl = bottom-left corner of the painting
 
-  let cropData: { x: number; y: number; w: number; h: number; rotation: number }
+The image is ${fetchedWidth} × ${fetchedHeight} pixels.
+
+Return ONLY valid JSON, no explanation, no markdown:
+{"tl":{"x":N,"y":N},"tr":{"x":N,"y":N},"br":{"x":N,"y":N},"bl":{"x":N,"y":N}}`
+
+  let rawCorners: { tl: { x: number; y: number }; tr: { x: number; y: number }; br: { x: number; y: number }; bl: { x: number; y: number } }
 
   try {
     const response = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 200,
+      max_tokens: 300,
       messages: [
         {
           role: 'user',
@@ -80,21 +86,20 @@ The fetched image is ${fetchedWidth} × ${fetchedHeight} pixels. Return ONLY val
     const text = response.content[0].type === 'text' ? response.content[0].text : ''
     const jsonMatch = text.match(/\{[\s\S]*\}/)
     if (!jsonMatch) throw new Error('No JSON in response')
-    cropData = JSON.parse(jsonMatch[0])
+    rawCorners = JSON.parse(jsonMatch[0])
   } catch (err) {
     console.error('auto-crop: Claude error', err)
     return NextResponse.json({ error: 'AI-analys misslyckades' }, { status: 500 })
   }
 
-  // Scale crop coords back up to original image dimensions
+  // Scale coordinates back up to original image dimensions
   const scale = (originalWidth ?? fetchedWidth) / fetchedWidth
-  const result = {
-    x: Math.round(cropData.x * scale),
-    y: Math.round(cropData.y * scale),
-    w: Math.round(cropData.w * scale),
-    h: Math.round(cropData.h * scale),
-    rotation: Math.round(cropData.rotation * 2) / 2, // round to nearest 0.5°
+  const corners = {
+    tl: { x: Math.round(rawCorners.tl.x * scale), y: Math.round(rawCorners.tl.y * scale) },
+    tr: { x: Math.round(rawCorners.tr.x * scale), y: Math.round(rawCorners.tr.y * scale) },
+    br: { x: Math.round(rawCorners.br.x * scale), y: Math.round(rawCorners.br.y * scale) },
+    bl: { x: Math.round(rawCorners.bl.x * scale), y: Math.round(rawCorners.bl.y * scale) },
   }
 
-  return NextResponse.json(result)
+  return NextResponse.json(corners)
 }

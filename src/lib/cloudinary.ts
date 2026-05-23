@@ -1,5 +1,5 @@
 import { v2 as cloudinary } from 'cloudinary'
-import type { GalleryPainting, Crop } from '@/types/painting'
+import type { GalleryPainting, Crop, Corners } from '@/types/painting'
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -15,21 +15,43 @@ interface CloudinaryContext {
   technique?: string
   available?: string
   year?: string
+  // Simple crop + rotation (legacy)
   crop_x?: string
   crop_y?: string
   crop_w?: string
   crop_h?: string
   crop_rotation?: string
+  // Four-corner perspective correction
+  corner_tl_x?: string; corner_tl_y?: string
+  corner_tr_x?: string; corner_tr_y?: string
+  corner_br_x?: string; corner_br_y?: string
+  corner_bl_x?: string; corner_bl_y?: string
 }
 
-function buildUrls(publicId: string, crop?: Crop): { thumbnailUrl: string; fullUrl: string } {
-  const cropTransform = crop
-    ? [{ crop: 'crop', x: Math.round(crop.x), y: Math.round(crop.y), width: Math.round(crop.w), height: Math.round(crop.h) }]
-    : []
+function buildUrls(
+  publicId: string,
+  crop?: Crop,
+  corners?: Corners,
+): { thumbnailUrl: string; fullUrl: string } {
+  const perspectiveTransform: object[] = []
 
-  const rotationTransform = crop?.rotation
-    ? [{ angle: Math.round(crop.rotation) }]
-    : []
+  if (corners) {
+    const { tl, tr, br, bl } = corners
+    perspectiveTransform.push({
+      effect: `distort:${tl.x}:${tl.y}:${tr.x}:${tr.y}:${br.x}:${br.y}:${bl.x}:${bl.y}`,
+    })
+  } else if (crop) {
+    perspectiveTransform.push({
+      crop: 'crop',
+      x: Math.round(crop.x),
+      y: Math.round(crop.y),
+      width: Math.round(crop.w),
+      height: Math.round(crop.h),
+    })
+    if (crop.rotation) {
+      perspectiveTransform.push({ angle: Math.round(crop.rotation) })
+    }
+  }
 
   const enhance = [
     { effect: 'improve:indoor' },
@@ -39,8 +61,7 @@ function buildUrls(publicId: string, crop?: Crop): { thumbnailUrl: string; fullU
 
   const thumbnailUrl = cloudinary.url(publicId, {
     transformation: [
-      ...cropTransform,
-      ...rotationTransform,
+      ...perspectiveTransform,
       ...enhance,
       { width: 900, crop: 'limit', quality: 'auto', fetch_format: 'auto' },
     ],
@@ -49,8 +70,7 @@ function buildUrls(publicId: string, crop?: Crop): { thumbnailUrl: string; fullU
 
   const fullUrl = cloudinary.url(publicId, {
     transformation: [
-      ...cropTransform,
-      ...rotationTransform,
+      ...perspectiveTransform,
       ...enhance,
       { width: 1800, crop: 'limit', quality: 'auto', fetch_format: 'auto' },
     ],
@@ -74,8 +94,21 @@ function toGalleryPainting(r: Record<string, unknown>): GalleryPainting {
 
   const publicId = r.public_id as string
 
+  const corners: Corners | undefined =
+    ctx.corner_tl_x && ctx.corner_tl_y &&
+    ctx.corner_tr_x && ctx.corner_tr_y &&
+    ctx.corner_br_x && ctx.corner_br_y &&
+    ctx.corner_bl_x && ctx.corner_bl_y
+      ? {
+          tl: { x: parseFloat(ctx.corner_tl_x), y: parseFloat(ctx.corner_tl_y) },
+          tr: { x: parseFloat(ctx.corner_tr_x), y: parseFloat(ctx.corner_tr_y) },
+          br: { x: parseFloat(ctx.corner_br_x), y: parseFloat(ctx.corner_br_y) },
+          bl: { x: parseFloat(ctx.corner_bl_x), y: parseFloat(ctx.corner_bl_y) },
+        }
+      : undefined
+
   const crop: Crop | undefined =
-    ctx.crop_x && ctx.crop_y && ctx.crop_w && ctx.crop_h
+    !corners && ctx.crop_x && ctx.crop_y && ctx.crop_w && ctx.crop_h
       ? {
           x: parseFloat(ctx.crop_x),
           y: parseFloat(ctx.crop_y),
@@ -85,7 +118,7 @@ function toGalleryPainting(r: Record<string, unknown>): GalleryPainting {
         }
       : undefined
 
-  const { thumbnailUrl, fullUrl } = buildUrls(publicId, crop)
+  const { thumbnailUrl, fullUrl } = buildUrls(publicId, crop, corners)
 
   return {
     id: publicId,
@@ -100,6 +133,7 @@ function toGalleryPainting(r: Record<string, unknown>): GalleryPainting {
     available,
     featured: false,
     crop,
+    corners,
     originalWidth: r.width as number,
     originalHeight: r.height as number,
   }
