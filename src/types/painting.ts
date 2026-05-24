@@ -11,6 +11,7 @@ export interface Corners {
   tr: { x: number; y: number }
   br: { x: number; y: number }
   bl: { x: number; y: number }
+  rotation?: number
 }
 
 export interface GalleryPainting {

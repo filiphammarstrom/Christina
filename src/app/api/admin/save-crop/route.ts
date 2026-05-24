@@ -1,6 +1,5 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { v2 as cloudinary } from 'cloudinary'
-import { cookies } from 'next/headers'
 import type { Corners } from '@/types/painting'
 
 cloudinary.config({
@@ -9,8 +8,8 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 })
 
-export async function POST(request: Request) {
-  const token = cookies().get('admin_token')?.value
+export async function POST(request: NextRequest) {
+  const token = request.cookies.get('admin_token')?.value
   if (token !== process.env.ADMIN_PASSWORD) {
     return NextResponse.json({ error: 'Ej behörig' }, { status: 401 })
   }
@@ -24,7 +23,15 @@ export async function POST(request: Request) {
 
   const context: Record<string, string> = {}
 
-  if (body.corners) {
+  if (body.reset) {
+    // Clear all crop/corner data — show original with only color enhancement
+    context.corner_tl_x = ''; context.corner_tl_y = ''
+    context.corner_tr_x = ''; context.corner_tr_y = ''
+    context.corner_br_x = ''; context.corner_br_y = ''
+    context.corner_bl_x = ''; context.corner_bl_y = ''
+    context.crop_x = ''; context.crop_y = ''; context.crop_w = ''; context.crop_h = ''
+    context.crop_rotation = ''
+  } else if (body.corners) {
     const c = body.corners as Corners
     context.corner_tl_x = String(Math.round(c.tl.x))
     context.corner_tl_y = String(Math.round(c.tl.y))
@@ -34,14 +41,13 @@ export async function POST(request: Request) {
     context.corner_br_y = String(Math.round(c.br.y))
     context.corner_bl_x = String(Math.round(c.bl.x))
     context.corner_bl_y = String(Math.round(c.bl.y))
+    context.crop_rotation = c.rotation ? String(c.rotation) : ''
     // Clear old-style crop fields
     context.crop_x = ''
     context.crop_y = ''
     context.crop_w = ''
     context.crop_h = ''
-    context.crop_rotation = ''
   } else {
-    // Legacy simple crop
     const { x, y, w, h, rotation } = body
     if (x == null || y == null || w == null || h == null) {
       return NextResponse.json({ error: 'Saknar crop-parametrar' }, { status: 400 })

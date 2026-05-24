@@ -34,22 +34,23 @@ export async function POST(request: NextRequest) {
   const fetchedWidth = Math.round((originalWidth ?? 1200) * scale)
   const fetchedHeight = Math.round((originalHeight ?? 900) * scale)
 
-  const prompt = `You are looking at a phone photo of an oil painting. The photo likely shows:
-- The painting itself (the canvas with paint on it)
-- Possibly a wooden frame around it
-- Possibly an easel, wall, floor, or room background behind/around it
-- The painting may be slightly tilted
+  const prompt = `You are analyzing a phone photo of an oil painting.
 
-Your task: identify the exact pixel coordinates of the four corners of the PAINTED SURFACE (the canvas itself, inside any frame). Exclude the frame, easel, wall, and any background.
+The photo may show: the painted canvas, a wooden frame, an easel, a wall, floor, or room background.
 
-Look carefully at where the paint ends and the frame/background begins. The painted area is the rectangle you want to capture.
+Your job: find the bounding box of just the PAINTED CANVAS (the part with paint on it, just inside any frame).
 
-Image size: ${fetchedWidth} × ${fetchedHeight} pixels.
+Express it as PERCENTAGES of the image dimensions (0 = left/top edge, 100 = right/bottom edge).
 
-Return the four corners of the painted canvas in this exact JSON format (integers only, no explanation):
-{"tl":{"x":N,"y":N},"tr":{"x":N,"y":N},"br":{"x":N,"y":N},"bl":{"x":N,"y":N}}
+Image: ${fetchedWidth} × ${fetchedHeight} pixels.
 
-Where tl=top-left, tr=top-right, br=bottom-right, bl=bottom-left of the PAINTING (not the photo).`
+Examples of typical answers:
+- Painting fills most of frame: {"left":5,"top":5,"right":95,"bottom":95}
+- Painting in center with easel/background visible: {"left":15,"top":10,"right":85,"bottom":90}
+- Painting offset to one side: {"left":20,"top":8,"right":92,"bottom":88}
+
+Return ONLY valid JSON, no explanation:
+{"left":N,"top":N,"right":N,"bottom":N}`
 
   try {
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -81,13 +82,20 @@ Where tl=top-left, tr=top-right, br=bottom-right, bl=bottom-left of the PAINTING
     }
 
     const raw = JSON.parse(jsonMatch[0])
-    const upscale = (originalWidth ?? fetchedWidth) / fetchedWidth
+
+    // Convert percentages → pixel coordinates in the original image
+    const W = originalWidth ?? fetchedWidth
+    const H = originalHeight ?? fetchedHeight
+    const left  = Math.round(raw.left  / 100 * W)
+    const top   = Math.round(raw.top   / 100 * H)
+    const right = Math.round(raw.right / 100 * W)
+    const bottom = Math.round(raw.bottom / 100 * H)
 
     const corners = {
-      tl: { x: Math.round(raw.tl.x * upscale), y: Math.round(raw.tl.y * upscale) },
-      tr: { x: Math.round(raw.tr.x * upscale), y: Math.round(raw.tr.y * upscale) },
-      br: { x: Math.round(raw.br.x * upscale), y: Math.round(raw.br.y * upscale) },
-      bl: { x: Math.round(raw.bl.x * upscale), y: Math.round(raw.bl.y * upscale) },
+      tl: { x: left,  y: top    },
+      tr: { x: right, y: top    },
+      br: { x: right, y: bottom },
+      bl: { x: left,  y: bottom },
     }
 
     return NextResponse.json(corners)

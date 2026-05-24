@@ -36,10 +36,16 @@ function buildUrls(
   const perspectiveTransform: object[] = []
 
   if (corners) {
+    // Use bounding box of the four corners as a simple crop — no black borders
     const { tl, tr, br, bl } = corners
-    perspectiveTransform.push({
-      effect: `distort:${tl.x}:${tl.y}:${tr.x}:${tr.y}:${br.x}:${br.y}:${bl.x}:${bl.y}`,
-    })
+    const x = Math.min(tl.x, bl.x)
+    const y = Math.min(tl.y, tr.y)
+    const w = Math.max(tr.x, br.x) - x
+    const h = Math.max(bl.y, br.y) - y
+    perspectiveTransform.push({ crop: 'crop', x, y, width: w, height: h })
+    if (corners.rotation) {
+      perspectiveTransform.push({ angle: Math.round(corners.rotation) })
+    }
   } else if (crop) {
     perspectiveTransform.push({
       crop: 'crop',
@@ -104,6 +110,7 @@ function toGalleryPainting(r: Record<string, unknown>): GalleryPainting {
           tr: { x: parseFloat(ctx.corner_tr_x), y: parseFloat(ctx.corner_tr_y) },
           br: { x: parseFloat(ctx.corner_br_x), y: parseFloat(ctx.corner_br_y) },
           bl: { x: parseFloat(ctx.corner_bl_x), y: parseFloat(ctx.corner_bl_y) },
+          rotation: ctx.crop_rotation ? parseFloat(ctx.crop_rotation) : undefined,
         }
       : undefined
 
