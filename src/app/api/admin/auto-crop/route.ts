@@ -34,28 +34,28 @@ export async function POST(request: NextRequest) {
   const fetchedWidth = Math.round((originalWidth ?? 1200) * scale)
   const fetchedHeight = Math.round((originalHeight ?? 900) * scale)
 
-  const prompt = `This is a photo of a painting taken with a phone. It may show the painting on an easel or against a wall, with a visible frame, and possibly tilted or at an angle (perspective distortion).
+  const prompt = `You are looking at a phone photo of an oil painting. The photo likely shows:
+- The painting itself (the canvas with paint on it)
+- Possibly a wooden frame around it
+- Possibly an easel, wall, floor, or room background behind/around it
+- The painting may be slightly tilted
 
-Find the FOUR CORNERS of the PAINTED CANVAS — just inside the inner edge of any visible frame, excluding easel, wall, floor, or background.
+Your task: identify the exact pixel coordinates of the four corners of the PAINTED SURFACE (the canvas itself, inside any frame). Exclude the frame, easel, wall, and any background.
 
-If the painting is photographed at an angle (so it appears trapezoidal), mark the actual corners of the painting surface as they appear in the photo — not a simple bounding box. This enables full perspective correction.
+Look carefully at where the paint ends and the frame/background begins. The painted area is the rectangle you want to capture.
 
-Label corners by their position ON THE PAINTING ITSELF:
-- tl = top-left of the painting
-- tr = top-right of the painting
-- br = bottom-right of the painting
-- bl = bottom-left of the painting
+Image size: ${fetchedWidth} × ${fetchedHeight} pixels.
 
-The image is ${fetchedWidth} × ${fetchedHeight} pixels.
+Return the four corners of the painted canvas in this exact JSON format (integers only, no explanation):
+{"tl":{"x":N,"y":N},"tr":{"x":N,"y":N},"br":{"x":N,"y":N},"bl":{"x":N,"y":N}}
 
-Return ONLY valid JSON, no explanation, no markdown fences:
-{"tl":{"x":N,"y":N},"tr":{"x":N,"y":N},"br":{"x":N,"y":N},"bl":{"x":N,"y":N}}`
+Where tl=top-left, tr=top-right, br=bottom-right, bl=bottom-left of the PAINTING (not the photo).`
 
   try {
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
     const response = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      model: 'claude-sonnet-4-6',
       max_tokens: 300,
       messages: [
         {
