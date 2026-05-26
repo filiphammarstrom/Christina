@@ -2,7 +2,6 @@
 
 import { useState, useRef } from 'react'
 import type { GalleryPainting, Corners, ColorSettings } from '@/types/painting'
-import { perspectiveDistortParams } from '@/lib/homography'
 import CropModal from './CropModal'
 import ColorModal from './ColorModal'
 
@@ -62,25 +61,15 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
     publicId: string,
     corners?: Corners,
     colorSettings?: ColorSettings,
-    originalWidth?: number,
-    originalHeight?: number,
   ): string {
     const parts: string[] = []
     if (corners) {
-      const distort = originalWidth && originalHeight
-        ? perspectiveDistortParams(corners, originalWidth, originalHeight)
-        : null
-      if (distort) {
-        parts.push(`e_distort:${distort.distortCoords.join(':')}`)
-        parts.push(`c_crop,x_${distort.cropX},y_${distort.cropY},w_${distort.outW},h_${distort.outH}`)
-      } else {
-        const x = Math.round(Math.min(corners.tl.x, corners.bl.x))
-        const y = Math.round(Math.min(corners.tl.y, corners.tr.y))
-        const w = Math.round(Math.max(corners.tr.x, corners.br.x) - x)
-        const h = Math.round(Math.max(corners.bl.y, corners.br.y) - y)
-        parts.push(`c_crop,x_${x},y_${y},w_${w},h_${h}`)
-        if (corners.rotation) parts.push(`a_${Math.round(corners.rotation)}`)
-      }
+      const x = Math.round(Math.min(corners.tl.x, corners.bl.x))
+      const y = Math.round(Math.min(corners.tl.y, corners.tr.y))
+      const w = Math.round(Math.max(corners.tr.x, corners.br.x) - x)
+      const h = Math.round(Math.max(corners.bl.y, corners.br.y) - y)
+      parts.push(`c_crop,x_${x},y_${y},w_${w},h_${h}`)
+      if (corners.rotation) parts.push(`a_${Math.round(corners.rotation)}`)
     }
     const vibrance = colorSettings?.vibrance ?? 60
     const improve = colorSettings?.improve ?? 'indoor'
@@ -104,7 +93,7 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
     setPaintings(prev =>
       prev.map(p => {
         if (p.publicId !== publicId) return p
-        const baseUrl = buildThumbnailUrl(publicId, undefined, p.colorSettings, p.originalWidth, p.originalHeight) + `?v=${Date.now()}`
+        const baseUrl = buildThumbnailUrl(publicId, undefined, p.colorSettings) + `?v=${Date.now()}`
         return { ...p, corners: undefined, crop: undefined, thumbnailUrl: baseUrl }
       })
     )
@@ -141,7 +130,7 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
     setPaintings(prev =>
       prev.map(p => {
         if (p.publicId !== publicId) return p
-        const newUrl = buildThumbnailUrl(publicId, corners, p.colorSettings, p.originalWidth, p.originalHeight) + `?v=${Date.now()}`
+        const newUrl = buildThumbnailUrl(publicId, corners, p.colorSettings) + `?v=${Date.now()}`
         return { ...p, corners, thumbnailUrl: newUrl }
       })
     )
@@ -182,7 +171,7 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
     setPaintings(prev =>
       prev.map(p => {
         if (p.publicId !== publicId) return p
-        const newUrl = buildThumbnailUrl(publicId, p.corners, colorSettings, p.originalWidth, p.originalHeight) + `?v=${Date.now()}`
+        const newUrl = buildThumbnailUrl(publicId, p.corners, colorSettings) + `?v=${Date.now()}`
         return { ...p, colorSettings, thumbnailUrl: newUrl }
       })
     )
