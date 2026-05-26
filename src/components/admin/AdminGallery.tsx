@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import type { GalleryPainting, Corners } from '@/types/painting'
+import type { GalleryPainting, Corners, ColorSettings } from '@/types/painting'
 import CropModal from './CropModal'
+import ColorModal from './ColorModal'
 
 interface Props {
   initialPaintings: GalleryPainting[]
@@ -32,6 +33,7 @@ function toEditState(p: GalleryPainting): EditState {
 async function processImage(publicId: string): Promise<string | null> {
   const res = await fetch('/api/admin/process-image', {
     method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ publicId }),
   })
@@ -48,19 +50,54 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
   const [processingAll, setProcessingAll] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [cropTarget, setCropTarget] = useState<GalleryPainting | null>(null)
+  const [colorTarget, setColorTarget] = useState<GalleryPainting | null>(null)
   const [autoCroppingAll, setAutoCroppingAll] = useState(false)
   const [autoCropProgress, setAutoCropProgress] = useState<{ done: number; total: number } | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  function buildThumbnailUrl(publicId: string, corners?: Corners): string {
+  function buildThumbnailUrl(publicId: string, corners?: Corners, colorSettings?: ColorSettings): string {
     const parts: string[] = []
     if (corners) {
-      const { tl, tr, br, bl } = corners
-      parts.push(`e_distort:${tl.x}:${tl.y}:${tr.x}:${tr.y}:${br.x}:${br.y}:${bl.x}:${bl.y}`)
+      const x = Math.round(Math.min(corners.tl.x, corners.bl.x))
+      const y = Math.round(Math.min(corners.tl.y, corners.tr.y))
+      const w = Math.round(Math.max(corners.tr.x, corners.br.x) - x)
+      const h = Math.round(Math.max(corners.bl.y, corners.br.y) - y)
+      parts.push(`c_crop,x_${x},y_${y},w_${w},h_${h}`)
+      if (corners.rotation) parts.push(`a_${Math.round(corners.rotation)}`)
     }
-    parts.push('e_improve:indoor', 'e_vibrance:60', 'e_sharpen:80')
+    const vibrance = colorSettings?.vibrance ?? 60
+    const improve = colorSettings?.improve ?? 'indoor'
+    const sharpen = colorSettings?.sharpen ?? 80
+    const brightness = colorSettings?.brightness ?? 0
+    if (improve !== 'none') parts.push(`e_improve:${improve}`)
+    if (vibrance > 0) parts.push(`e_vibrance:${vibrance}`)
+    if (sharpen > 0) parts.push(`e_sharpen:${sharpen}`)
+    if (brightness !== 0) parts.push(`e_brightness:${brightness}`)
     parts.push('w_900,c_limit,q_auto,f_auto')
     return `https://res.cloudinary.com/${cloudName}/image/upload/${parts.join('/')}/${publicId}`
+  }
+
+  async function resetCrop(publicId: string) {
+    await fetch('/api/admin/save-crop', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ publicId, reset: true }),
+    })
+    setPaintings(prev =>
+      prev.map(p => {
+        if (p.publicId !== publicId) return p
+        const baseUrl = buildThumbnailUrl(publicId, undefined, p.colorSettings) + `?v=${Date.now()}`
+        return { ...p, corners: undefined, crop: undefined, thumbnailUrl: baseUrl }
+      })
+    )
+  }
+
+  async function resetAllCrops() {
+    if (!confirm(`Återställ beskärning på alla ${paintings.length} tavlor? De visas som originalbilder (med färgförbättring).`)) return
+    for (const p of paintings) {
+      await resetCrop(p.publicId)
+    }
   }
 
   async function runAutoCropForPainting(p: GalleryPainting): Promise<Corners | null> {
@@ -77,15 +114,19 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
   async function saveCorners(publicId: string, corners: Corners) {
     await fetch('/api/admin/save-crop', {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ publicId, corners }),
     })
   }
 
   function applyCornersToPainting(publicId: string, corners: Corners) {
-    const newUrl = buildThumbnailUrl(publicId, corners) + `?v=${Date.now()}`
     setPaintings(prev =>
-      prev.map(p => p.publicId === publicId ? { ...p, corners, thumbnailUrl: newUrl } : p)
+      prev.map(p => {
+        if (p.publicId !== publicId) return p
+        const newUrl = buildThumbnailUrl(publicId, corners, p.colorSettings) + `?v=${Date.now()}`
+        return { ...p, corners, thumbnailUrl: newUrl }
+      })
     )
   }
 
@@ -118,6 +159,19 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
     setCropTarget(null)
   }
 
+  function handleColorSaved(colorSettings: ColorSettings) {
+    if (!colorTarget) return
+    const { publicId } = colorTarget
+    setPaintings(prev =>
+      prev.map(p => {
+        if (p.publicId !== publicId) return p
+        const newUrl = buildThumbnailUrl(publicId, p.corners, colorSettings) + `?v=${Date.now()}`
+        return { ...p, colorSettings, thumbnailUrl: newUrl }
+      })
+    )
+    setColorTarget(null)
+  }
+
   function startEdit(p: GalleryPainting) {
     setEditing(prev => ({ ...prev, [p.publicId]: toEditState(p) }))
   }
@@ -137,6 +191,7 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
 
     await fetch('/api/admin/update-painting', {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ publicId, ...state, price: state.price || null }),
     })
@@ -166,6 +221,7 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
 
     await fetch('/api/admin/delete-painting', {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ publicId }),
     })
@@ -198,7 +254,7 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
     setUploading(true)
 
     for (const file of Array.from(files)) {
-      const sigRes = await fetch('/api/admin/get-signature')
+      const sigRes = await fetch('/api/admin/get-signature', { credentials: 'include' })
       const { timestamp, signature, apiKey } = await sigRes.json()
 
       const formData = new FormData()
@@ -251,6 +307,13 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
         <h1 className="font-serif text-xl">Christinas verk — Admin</h1>
         <div className="flex items-center gap-4 flex-wrap">
           <span className="text-sm text-[#999]">{paintings.length} tavlor</span>
+          <button
+            onClick={resetAllCrops}
+            disabled={autoCroppingAll || processingAll}
+            className="text-sm border border-red-300 text-red-400 px-3 py-1.5 hover:bg-red-50 disabled:opacity-40 transition-colors"
+          >
+            ↺ Återställ alla
+          </button>
           <button
             onClick={autoCropAll}
             disabled={autoCroppingAll || processingAll}
@@ -352,11 +415,31 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
                         </button>
                         <button
                           onClick={() => setCropTarget(p)}
-                          title="Beskär och korrigera perspektiv"
+                          title="Beskär och räta upp"
                           className="border border-[#DDD] text-[#888] text-xs py-1.5 px-2 hover:border-[#C4A35A] hover:text-[#C4A35A] transition-colors"
                         >
                           ✂
                         </button>
+                        <button
+                          onClick={() => setColorTarget(p)}
+                          title="Justera färger"
+                          className={`border text-xs py-1.5 px-2 transition-colors ${
+                            p.colorSettings
+                              ? 'border-[#C4A35A] text-[#C4A35A] hover:bg-[#C4A35A]/10'
+                              : 'border-[#DDD] text-[#888] hover:border-[#C4A35A] hover:text-[#C4A35A]'
+                          }`}
+                        >
+                          🎨
+                        </button>
+                        {p.corners && (
+                          <button
+                            onClick={() => resetCrop(p.publicId)}
+                            title="Återställ beskärning"
+                            className="border border-[#DDD] text-[#AAA] text-xs py-1.5 px-2 hover:border-red-300 hover:text-red-400 transition-colors"
+                          >
+                            ↺
+                          </button>
+                        )}
                         <button
                           onClick={() => fixOnePainting(p.publicId)}
                           disabled={isProcessing}
@@ -443,6 +526,15 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
           painting={cropTarget}
           onSave={handleCropSaved}
           onClose={() => setCropTarget(null)}
+        />
+      )}
+
+      {colorTarget && (
+        <ColorModal
+          painting={colorTarget}
+          cloudName={cloudName}
+          onSave={handleColorSaved}
+          onClose={() => setColorTarget(null)}
         />
       )}
     </div>

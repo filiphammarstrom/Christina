@@ -34,28 +34,29 @@ export async function POST(request: NextRequest) {
   const fetchedWidth = Math.round((originalWidth ?? 1200) * scale)
   const fetchedHeight = Math.round((originalHeight ?? 900) * scale)
 
-  const prompt = `This is a photo of a painting taken with a phone. It may show the painting on an easel or against a wall, with a visible frame, and possibly tilted or at an angle (perspective distortion).
+  const prompt = `You are analyzing a phone photo of an oil painting.
 
-Find the FOUR CORNERS of the PAINTED CANVAS — just inside the inner edge of any visible frame, excluding easel, wall, floor, or background.
+The photo may show: the painted canvas, a wooden frame, an easel, a wall, floor, or room background.
 
-If the painting is photographed at an angle (so it appears trapezoidal), mark the actual corners of the painting surface as they appear in the photo — not a simple bounding box. This enables full perspective correction.
+Your job: find the bounding box of just the PAINTED CANVAS (the part with paint on it, just inside any frame).
 
-Label corners by their position ON THE PAINTING ITSELF:
-- tl = top-left of the painting
-- tr = top-right of the painting
-- br = bottom-right of the painting
-- bl = bottom-left of the painting
+Express it as PERCENTAGES of the image dimensions (0 = left/top edge, 100 = right/bottom edge).
 
-The image is ${fetchedWidth} × ${fetchedHeight} pixels.
+Image: ${fetchedWidth} × ${fetchedHeight} pixels.
 
-Return ONLY valid JSON, no explanation, no markdown fences:
-{"tl":{"x":N,"y":N},"tr":{"x":N,"y":N},"br":{"x":N,"y":N},"bl":{"x":N,"y":N}}`
+Examples of typical answers:
+- Painting fills most of frame: {"left":5,"top":5,"right":95,"bottom":95}
+- Painting in center with easel/background visible: {"left":15,"top":10,"right":85,"bottom":90}
+- Painting offset to one side: {"left":20,"top":8,"right":92,"bottom":88}
+
+Return ONLY valid JSON, no explanation:
+{"left":N,"top":N,"right":N,"bottom":N}`
 
   try {
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
     const response = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      model: 'claude-sonnet-4-6',
       max_tokens: 300,
       messages: [
         {
@@ -81,13 +82,20 @@ Return ONLY valid JSON, no explanation, no markdown fences:
     }
 
     const raw = JSON.parse(jsonMatch[0])
-    const upscale = (originalWidth ?? fetchedWidth) / fetchedWidth
+
+    // Convert percentages → pixel coordinates in the original image
+    const W = originalWidth ?? fetchedWidth
+    const H = originalHeight ?? fetchedHeight
+    const left  = Math.round(raw.left  / 100 * W)
+    const top   = Math.round(raw.top   / 100 * H)
+    const right = Math.round(raw.right / 100 * W)
+    const bottom = Math.round(raw.bottom / 100 * H)
 
     const corners = {
-      tl: { x: Math.round(raw.tl.x * upscale), y: Math.round(raw.tl.y * upscale) },
-      tr: { x: Math.round(raw.tr.x * upscale), y: Math.round(raw.tr.y * upscale) },
-      br: { x: Math.round(raw.br.x * upscale), y: Math.round(raw.br.y * upscale) },
-      bl: { x: Math.round(raw.bl.x * upscale), y: Math.round(raw.bl.y * upscale) },
+      tl: { x: left,  y: top    },
+      tr: { x: right, y: top    },
+      br: { x: right, y: bottom },
+      bl: { x: left,  y: bottom },
     }
 
     return NextResponse.json(corners)

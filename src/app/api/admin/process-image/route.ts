@@ -1,6 +1,5 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { v2 as cloudinary } from 'cloudinary'
-import { cookies } from 'next/headers'
 import sharp from 'sharp'
 
 cloudinary.config({
@@ -9,8 +8,8 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 })
 
-export async function POST(request: Request) {
-  const token = cookies().get('admin_token')?.value
+export async function POST(request: NextRequest) {
+  const token = request.cookies.get('admin_token')?.value
   if (token !== process.env.ADMIN_PASSWORD) {
     return NextResponse.json({ error: 'Ej behörig' }, { status: 401 })
   }

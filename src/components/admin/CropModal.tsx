@@ -16,6 +16,7 @@ export default function CropModal({ painting, onSave, onClose }: Props) {
   const [loaded, setLoaded] = useState(false)
   const [corners, setCorners] = useState<Record<CornerKey, { x: number; y: number }> | null>(null)
   const draggingRef = useRef<CornerKey | null>(null)
+  const [rotation, setRotation] = useState(painting.corners?.rotation ?? 0)
   const [saving, setSaving] = useState(false)
   const [autoDetecting, setAutoDetecting] = useState(false)
 
@@ -128,11 +129,13 @@ export default function CropModal({ painting, onSave, onClose }: Props) {
       tr: { x: Math.round(corners.tr.x * scaleX), y: Math.round(corners.tr.y * scaleY) },
       br: { x: Math.round(corners.br.x * scaleX), y: Math.round(corners.br.y * scaleY) },
       bl: { x: Math.round(corners.bl.x * scaleX), y: Math.round(corners.bl.y * scaleY) },
+      rotation: rotation !== 0 ? rotation : undefined,
     }
 
     setSaving(true)
     const res = await fetch('/api/admin/save-crop', {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ publicId: painting.publicId, corners: originalCorners }),
     })
@@ -247,6 +250,25 @@ export default function CropModal({ painting, onSave, onClose }: Props) {
           )}
         </div>
 
+        {/* Rotation slider */}
+        <div className="w-full max-w-2xl">
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-white/70 text-sm">Räta upp (rotation)</label>
+            <span className="text-white font-mono text-sm tabular-nums">
+              {rotation > 0 ? '+' : ''}{rotation.toFixed(1)}°
+            </span>
+          </div>
+          <input
+            type="range" min={-20} max={20} step={0.5}
+            value={rotation}
+            onChange={e => setRotation(parseFloat(e.target.value))}
+            className="w-full accent-[#C4A35A]"
+          />
+          <div className="flex justify-between text-white/30 text-xs mt-1">
+            <span>−20°</span><span>0°</span><span>+20°</span>
+          </div>
+        </div>
+
         {/* Buttons */}
         <div className="flex flex-wrap gap-3 justify-center">
           <button
@@ -260,7 +282,7 @@ export default function CropModal({ painting, onSave, onClose }: Props) {
             onClick={handleReset}
             className="border border-white/30 text-white/70 text-sm px-4 py-2.5 hover:border-white/60 transition-colors"
           >
-            Återställ
+            Återställ hörn
           </button>
           <button
             onClick={onClose}

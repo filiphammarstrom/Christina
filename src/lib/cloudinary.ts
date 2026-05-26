@@ -1,5 +1,5 @@
 import { v2 as cloudinary } from 'cloudinary'
-import type { GalleryPainting, Crop, Corners } from '@/types/painting'
+import type { GalleryPainting, Crop, Corners, ColorSettings } from '@/types/painting'
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -26,20 +26,45 @@ interface CloudinaryContext {
   corner_tr_x?: string; corner_tr_y?: string
   corner_br_x?: string; corner_br_y?: string
   corner_bl_x?: string; corner_bl_y?: string
+  // Per-image color settings
+  color_vibrance?: string
+  color_improve?: string
+  color_sharpen?: string
+  color_brightness?: string
+}
+
+function buildEnhance(cs?: ColorSettings): object[] {
+  const vibrance = cs?.vibrance ?? 60
+  const improve = cs?.improve ?? 'indoor'
+  const sharpen = cs?.sharpen ?? 80
+  const brightness = cs?.brightness ?? 0
+  const fx: object[] = []
+  if (improve !== 'none') fx.push({ effect: `improve:${improve}` })
+  if (vibrance > 0) fx.push({ effect: `vibrance:${vibrance}` })
+  if (sharpen > 0) fx.push({ effect: `sharpen:${sharpen}` })
+  if (brightness !== 0) fx.push({ effect: `brightness:${brightness}` })
+  return fx
 }
 
 function buildUrls(
   publicId: string,
   crop?: Crop,
   corners?: Corners,
+  colorSettings?: ColorSettings,
 ): { thumbnailUrl: string; fullUrl: string } {
   const perspectiveTransform: object[] = []
 
   if (corners) {
+    // Use bounding box of the four corners as a simple crop — no black borders
     const { tl, tr, br, bl } = corners
-    perspectiveTransform.push({
-      effect: `distort:${tl.x}:${tl.y}:${tr.x}:${tr.y}:${br.x}:${br.y}:${bl.x}:${bl.y}`,
-    })
+    const x = Math.min(tl.x, bl.x)
+    const y = Math.min(tl.y, tr.y)
+    const w = Math.max(tr.x, br.x) - x
+    const h = Math.max(bl.y, br.y) - y
+    perspectiveTransform.push({ crop: 'crop', x, y, width: w, height: h })
+    if (corners.rotation) {
+      perspectiveTransform.push({ angle: Math.round(corners.rotation) })
+    }
   } else if (crop) {
     perspectiveTransform.push({
       crop: 'crop',
@@ -53,11 +78,7 @@ function buildUrls(
     }
   }
 
-  const enhance = [
-    { effect: 'improve:indoor' },
-    { effect: 'vibrance:60' },
-    { effect: 'sharpen:80' },
-  ]
+  const enhance = buildEnhance(colorSettings)
 
   const thumbnailUrl = cloudinary.url(publicId, {
     transformation: [
@@ -104,6 +125,7 @@ function toGalleryPainting(r: Record<string, unknown>): GalleryPainting {
           tr: { x: parseFloat(ctx.corner_tr_x), y: parseFloat(ctx.corner_tr_y) },
           br: { x: parseFloat(ctx.corner_br_x), y: parseFloat(ctx.corner_br_y) },
           bl: { x: parseFloat(ctx.corner_bl_x), y: parseFloat(ctx.corner_bl_y) },
+          rotation: ctx.crop_rotation ? parseFloat(ctx.crop_rotation) : undefined,
         }
       : undefined
 
@@ -118,7 +140,17 @@ function toGalleryPainting(r: Record<string, unknown>): GalleryPainting {
         }
       : undefined
 
-  const { thumbnailUrl, fullUrl } = buildUrls(publicId, crop, corners)
+  const colorSettings: ColorSettings | undefined =
+    ctx.color_vibrance || ctx.color_improve || ctx.color_sharpen || ctx.color_brightness
+      ? {
+          vibrance: ctx.color_vibrance ? parseInt(ctx.color_vibrance, 10) : 60,
+          improve: (ctx.color_improve as ColorSettings['improve']) || 'indoor',
+          sharpen: ctx.color_sharpen ? parseInt(ctx.color_sharpen, 10) : 80,
+          brightness: ctx.color_brightness ? parseInt(ctx.color_brightness, 10) : 0,
+        }
+      : undefined
+
+  const { thumbnailUrl, fullUrl } = buildUrls(publicId, crop, corners, colorSettings)
 
   return {
     id: publicId,
@@ -134,6 +166,7 @@ function toGalleryPainting(r: Record<string, unknown>): GalleryPainting {
     featured: false,
     crop,
     corners,
+    colorSettings,
     originalWidth: r.width as number,
     originalHeight: r.height as number,
   }
