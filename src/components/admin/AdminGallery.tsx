@@ -52,6 +52,8 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
   const [uploading, setUploading] = useState(false)
   const [cropTarget, setCropTarget] = useState<GalleryPainting | null>(null)
   const [colorTarget, setColorTarget] = useState<GalleryPainting | null>(null)
+  const [revalidating, setRevalidating] = useState(false)
+  const [revalidated, setRevalidated] = useState(false)
   const [autoCroppingAll, setAutoCroppingAll] = useState(false)
   const [autoCropProgress, setAutoCropProgress] = useState<{ done: number; total: number } | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -315,6 +317,14 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
     window.location.href = '/admin/login'
   }
 
+  async function handleRevalidate() {
+    setRevalidating(true)
+    await fetch('/api/admin/revalidate', { method: 'POST', credentials: 'include' })
+    setRevalidating(false)
+    setRevalidated(true)
+    setTimeout(() => setRevalidated(false), 3000)
+  }
+
   return (
     <div>
       {/* Header */}
@@ -344,6 +354,17 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
             className="text-sm border border-[#CCC] px-3 py-1.5 hover:border-[#1C1C1C] disabled:opacity-40 transition-colors"
           >
             {processingAll ? 'Förbättrar…' : '✦ Förbättra alla bilder'}
+          </button>
+          <button
+            onClick={handleRevalidate}
+            disabled={revalidating}
+            className={`text-sm px-3 py-1.5 border transition-colors disabled:opacity-40 ${
+              revalidated
+                ? 'border-green-400 text-green-600 bg-green-50'
+                : 'border-[#1C1C1C] text-[#1C1C1C] hover:bg-[#1C1C1C] hover:text-white'
+            }`}
+          >
+            {revalidating ? 'Publicerar…' : revalidated ? '✓ Publicerat' : '↑ Publicera sajten'}
           </button>
           <button onClick={handleLogout} className="text-sm text-[#999] hover:text-[#1C1C1C]">
             Logga ut
