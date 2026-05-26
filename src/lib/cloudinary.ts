@@ -1,5 +1,6 @@
 import { v2 as cloudinary } from 'cloudinary'
 import type { GalleryPainting, Crop, Corners, ColorSettings } from '@/types/painting'
+import { perspectiveDistortParams } from './homography'
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -51,19 +52,36 @@ function buildUrls(
   crop?: Crop,
   corners?: Corners,
   colorSettings?: ColorSettings,
+  originalWidth?: number,
+  originalHeight?: number,
 ): { thumbnailUrl: string; fullUrl: string } {
   const perspectiveTransform: object[] = []
 
   if (corners) {
-    // Use bounding box of the four corners as a simple crop — no black borders
-    const { tl, tr, br, bl } = corners
-    const x = Math.min(tl.x, bl.x)
-    const y = Math.min(tl.y, tr.y)
-    const w = Math.max(tr.x, br.x) - x
-    const h = Math.max(bl.y, br.y) - y
-    perspectiveTransform.push({ crop: 'crop', x, y, width: w, height: h })
-    if (corners.rotation) {
-      perspectiveTransform.push({ angle: Math.round(corners.rotation) })
+    // Try e_distort for non-rectangular corners (true perspective correction)
+    const distort = originalWidth && originalHeight
+      ? perspectiveDistortParams(corners, originalWidth, originalHeight)
+      : null
+
+    if (distort) {
+      perspectiveTransform.push({
+        effect: `distort:${distort.distortCoords.join(':')}`,
+      })
+      perspectiveTransform.push({
+        crop: 'crop', x: distort.cropX, y: distort.cropY,
+        width: distort.outW, height: distort.outH,
+      })
+    } else {
+      // Nearly rectangular — simple bounding box crop
+      const { tl, tr, br, bl } = corners
+      const x = Math.round(Math.min(tl.x, bl.x))
+      const y = Math.round(Math.min(tl.y, tr.y))
+      const w = Math.round(Math.max(tr.x, br.x) - x)
+      const h = Math.round(Math.max(bl.y, br.y) - y)
+      perspectiveTransform.push({ crop: 'crop', x, y, width: w, height: h })
+      if (corners.rotation) {
+        perspectiveTransform.push({ angle: Math.round(corners.rotation) })
+      }
     }
   } else if (crop) {
     perspectiveTransform.push({
@@ -150,7 +168,11 @@ function toGalleryPainting(r: Record<string, unknown>): GalleryPainting {
         }
       : undefined
 
-  const { thumbnailUrl, fullUrl } = buildUrls(publicId, crop, corners, colorSettings)
+  const { thumbnailUrl, fullUrl } = buildUrls(
+    publicId, crop, corners, colorSettings,
+    r.width as number | undefined,
+    r.height as number | undefined,
+  )
 
   return {
     id: publicId,

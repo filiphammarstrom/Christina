@@ -34,23 +34,28 @@ export async function POST(request: NextRequest) {
   const fetchedWidth = Math.round((originalWidth ?? 1200) * scale)
   const fetchedHeight = Math.round((originalHeight ?? 900) * scale)
 
-  const prompt = `You are analyzing a phone photo of an oil painting.
+  const prompt = `You are analyzing a phone photo of an oil painting on a canvas or wooden panel.
 
-The photo may show: the painted canvas, a wooden frame, an easel, a wall, floor, or room background.
+The photo may show: the painted surface, a wooden or decorative frame, an easel, a wall, floor, or background.
 
-Your job: find the bounding box of just the PAINTED CANVAS (the part with paint on it, just inside any frame).
+Your job: locate the 4 EXACT CORNERS of the PAINTED CANVAS — the inner edge of the frame where paint begins, or the edge of the canvas/panel itself if unframed.
 
-Express it as PERCENTAGES of the image dimensions (0 = left/top edge, 100 = right/bottom edge).
+IMPORTANT RULES:
+- Be TIGHT: corners should be right at the edge of the painted area, not a safe margin inside
+- The painting may be slightly tilted or photographed at an angle — place corners exactly where they physically are, even if the resulting shape is a trapezoid or parallelogram
+- If framed: find the INNER edge of the frame (where paint starts), NOT the outer edge of the frame
+- If unframed: find the actual canvas/panel edge
 
 Image: ${fetchedWidth} × ${fetchedHeight} pixels.
+Return corner positions as PERCENTAGES (0–100) of image width (x) and height (y).
 
-Examples of typical answers:
-- Painting fills most of frame: {"left":5,"top":5,"right":95,"bottom":95}
-- Painting in center with easel/background visible: {"left":15,"top":10,"right":85,"bottom":90}
-- Painting offset to one side: {"left":20,"top":8,"right":92,"bottom":88}
+Examples:
+Painting fills most of frame, slightly tilted: {"tl":{"x":7,"y":5},"tr":{"x":94,"y":6},"br":{"x":93,"y":94},"bl":{"x":8,"y":95}}
+Painting on easel, visible background, slight perspective: {"tl":{"x":18,"y":12},"tr":{"x":83,"y":10},"br":{"x":85,"y":90},"bl":{"x":16,"y":92}}
+Painting at angle (photographed from the side): {"tl":{"x":10,"y":8},"tr":{"x":88,"y":14},"br":{"x":86,"y":93},"bl":{"x":12,"y":87}}
 
 Return ONLY valid JSON, no explanation:
-{"left":N,"top":N,"right":N,"bottom":N}`
+{"tl":{"x":N,"y":N},"tr":{"x":N,"y":N},"br":{"x":N,"y":N},"bl":{"x":N,"y":N}}`
 
   try {
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -83,19 +88,28 @@ Return ONLY valid JSON, no explanation:
 
     const raw = JSON.parse(jsonMatch[0])
 
-    // Convert percentages → pixel coordinates in the original image
     const W = originalWidth ?? fetchedWidth
     const H = originalHeight ?? fetchedHeight
-    const left  = Math.round(raw.left  / 100 * W)
-    const top   = Math.round(raw.top   / 100 * H)
-    const right = Math.round(raw.right / 100 * W)
-    const bottom = Math.round(raw.bottom / 100 * H)
 
-    const corners = {
-      tl: { x: left,  y: top    },
-      tr: { x: right, y: top    },
-      br: { x: right, y: bottom },
-      bl: { x: left,  y: bottom },
+    // Support both new 4-corner format and legacy bounding-box format
+    let corners
+    if (raw.tl && raw.tr && raw.br && raw.bl) {
+      corners = {
+        tl: { x: Math.round(raw.tl.x / 100 * W), y: Math.round(raw.tl.y / 100 * H) },
+        tr: { x: Math.round(raw.tr.x / 100 * W), y: Math.round(raw.tr.y / 100 * H) },
+        br: { x: Math.round(raw.br.x / 100 * W), y: Math.round(raw.br.y / 100 * H) },
+        bl: { x: Math.round(raw.bl.x / 100 * W), y: Math.round(raw.bl.y / 100 * H) },
+      }
+    } else {
+      // Legacy fallback: {left, top, right, bottom}
+      const left   = Math.round((raw.left   ?? 5)  / 100 * W)
+      const top    = Math.round((raw.top    ?? 5)  / 100 * H)
+      const right  = Math.round((raw.right  ?? 95) / 100 * W)
+      const bottom = Math.round((raw.bottom ?? 95) / 100 * H)
+      corners = {
+        tl: { x: left, y: top }, tr: { x: right, y: top },
+        br: { x: right, y: bottom }, bl: { x: left, y: bottom },
+      }
     }
 
     return NextResponse.json(corners)
