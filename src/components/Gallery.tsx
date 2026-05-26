@@ -4,23 +4,57 @@ import { useState } from 'react'
 import Lightbox from './Lightbox'
 import type { GalleryPainting } from '@/types/painting'
 
-type Filter = 'all' | 'available' | 'sold'
+type AvailFilter = 'all' | 'available' | 'sold'
+type SizeFilter = 'all' | 'large' | 'small'
+
+const SIZE_THRESHOLD = 60 // cm — paintings with max dimension ≥ this are "large"
+
+function maxDimension(dimensions?: string): number | null {
+  if (!dimensions) return null
+  const nums = dimensions.match(/\d+/g)
+  if (!nums || nums.length === 0) return null
+  return Math.max(...nums.map(Number))
+}
+
+function matchesSize(p: GalleryPainting, sf: SizeFilter): boolean {
+  if (sf === 'all') return true
+  const max = maxDimension(p.dimensions)
+  if (max === null) return true // no dimensions — include in both
+  return sf === 'large' ? max >= SIZE_THRESHOLD : max < SIZE_THRESHOLD
+}
 
 interface Props {
   paintings: GalleryPainting[]
 }
 
 export default function Gallery({ paintings }: Props) {
-  const [filter, setFilter] = useState<Filter>('all')
+  const [avail, setAvail] = useState<AvailFilter>('all')
+  const [size, setSize] = useState<SizeFilter>('all')
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
 
   const filtered = paintings.filter(p => {
-    if (filter === 'available') return p.available
-    if (filter === 'sold') return !p.available
-    return true
+    if (avail === 'available' && !p.available) return false
+    if (avail === 'sold' && p.available) return false
+    return matchesSize(p, size)
   })
 
   const selected = selectedIndex !== null ? filtered[selectedIndex] : null
+
+  function countAvail(af: AvailFilter) {
+    return paintings.filter(p => {
+      if (af === 'available' && !p.available) return false
+      if (af === 'sold' && p.available) return false
+      return matchesSize(p, size)
+    }).length
+  }
+
+  function countSize(sf: SizeFilter) {
+    return paintings.filter(p => {
+      if (avail === 'available' && !p.available) return false
+      if (avail === 'sold' && p.available) return false
+      return matchesSize(p, sf)
+    }).length
+  }
 
   if (paintings.length === 0) {
     return (
@@ -33,28 +67,46 @@ export default function Gallery({ paintings }: Props) {
 
   return (
     <>
-      {/* Filter */}
-      <div className="flex items-center gap-1 mb-10">
-        {(['all', 'available', 'sold'] as Filter[]).map(f => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`px-4 py-1.5 text-sm tracking-wider uppercase transition-colors ${
-              filter === f
-                ? 'bg-[#1C1C1C] text-white'
-                : 'text-[#888] hover:text-[#1C1C1C]'
-            }`}
-          >
-            {f === 'all' ? 'Alla' : f === 'available' ? 'Till salu' : 'Sålda'}
-            <span className="ml-1.5 text-xs opacity-60">
-              {f === 'all'
-                ? paintings.length
-                : f === 'available'
-                ? paintings.filter(p => p.available).length
-                : paintings.filter(p => !p.available).length}
-            </span>
-          </button>
-        ))}
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 mb-10">
+        {/* Availability */}
+        <div className="flex items-center gap-1">
+          {(['all', 'available', 'sold'] as AvailFilter[]).map(f => (
+            <button
+              key={f}
+              onClick={() => { setAvail(f); setSelectedIndex(null) }}
+              className={`px-4 py-1.5 text-sm tracking-wider uppercase transition-colors ${
+                avail === f
+                  ? 'bg-[#1C1C1C] text-white'
+                  : 'text-[#888] hover:text-[#1C1C1C]'
+              }`}
+            >
+              {f === 'all' ? 'Alla' : f === 'available' ? 'Till salu' : 'Sålda'}
+              <span className="ml-1.5 text-xs opacity-60">{countAvail(f)}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Divider */}
+        <div className="w-px h-5 bg-[#DDD] hidden sm:block" />
+
+        {/* Size */}
+        <div className="flex items-center gap-1">
+          {(['all', 'large', 'small'] as SizeFilter[]).map(f => (
+            <button
+              key={f}
+              onClick={() => { setSize(f); setSelectedIndex(null) }}
+              className={`px-4 py-1.5 text-sm tracking-wider uppercase transition-colors ${
+                size === f
+                  ? 'bg-[#1C1C1C] text-white'
+                  : 'text-[#888] hover:text-[#1C1C1C]'
+              }`}
+            >
+              {f === 'all' ? 'Alla storlekar' : f === 'large' ? 'Stora' : 'Mindre'}
+              <span className="ml-1.5 text-xs opacity-60">{countSize(f)}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Masonry grid */}
