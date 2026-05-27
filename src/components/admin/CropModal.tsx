@@ -193,10 +193,12 @@ export default function CropModal({ painting, onSave, onClose }: Props) {
 
         {/* Image + SVG overlay + corner handles */}
         <div className="relative inline-block select-none">
+          {/* originalUrl = no crop/colour transforms applied, so corner coords
+              map directly to source image pixel space */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             ref={imgRef}
-            src={painting.fullUrl}
+            src={painting.originalUrl}
             alt={painting.title ?? 'Tavla'}
             className="block max-h-[55vh] max-w-[90vw] object-contain"
             style={{ userSelect: 'none' }}

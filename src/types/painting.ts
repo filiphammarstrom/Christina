@@ -33,6 +33,7 @@ export interface GalleryPainting {
   publicId: string
   thumbnailUrl: string
   fullUrl: string
+  originalUrl: string   // untransformed source image — used by CropModal
   title?: string
   year?: number
   dimensions?: string

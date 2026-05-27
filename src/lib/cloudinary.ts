@@ -51,16 +51,25 @@ function buildUrls(
   crop?: Crop,
   corners?: Corners,
   colorSettings?: ColorSettings,
-): { thumbnailUrl: string; fullUrl: string } {
+): { thumbnailUrl: string; fullUrl: string; originalUrl: string } {
   const perspectiveTransform: object[] = []
 
   if (corners) {
     const { tl, tr, br, bl } = corners
-    const x = Math.round(Math.min(tl.x, bl.x))
-    const y = Math.round(Math.min(tl.y, tr.y))
-    const w = Math.round(Math.max(tr.x, br.x) - x)
-    const h = Math.round(Math.max(bl.y, br.y) - y)
-    perspectiveTransform.push({ crop: 'crop', x, y, width: w, height: h })
+    // Natural output size: average of opposite quad edge lengths
+    const outW = Math.round(
+      (Math.hypot(tr.x - tl.x, tr.y - tl.y) + Math.hypot(br.x - bl.x, br.y - bl.y)) / 2
+    )
+    const outH = Math.round(
+      (Math.hypot(bl.x - tl.x, bl.y - tl.y) + Math.hypot(br.x - tr.x, br.y - tr.y)) / 2
+    )
+    // e_distort maps source quad corners → output rectangle corners (perspective correction)
+    perspectiveTransform.push({
+      effect: `distort:${Math.round(tl.x)}:${Math.round(tl.y)}:${Math.round(tr.x)}:${Math.round(tr.y)}:${Math.round(br.x)}:${Math.round(br.y)}:${Math.round(bl.x)}:${Math.round(bl.y)}`,
+      width: outW,
+      height: outH,
+      crop: 'crop',
+    })
     if (corners.rotation) {
       perspectiveTransform.push({ angle: Math.round(corners.rotation) })
     }
@@ -97,7 +106,13 @@ function buildUrls(
     secure: true,
   })
 
-  return { thumbnailUrl, fullUrl }
+  // Original image without any crop or colour transforms — used by CropModal
+  const originalUrl = cloudinary.url(publicId, {
+    transformation: [{ width: 1600, crop: 'limit', quality: 85, fetch_format: 'jpg' }],
+    secure: true,
+  })
+
+  return { thumbnailUrl, fullUrl, originalUrl }
 }
 
 function toGalleryPainting(r: Record<string, unknown>): GalleryPainting {
@@ -149,13 +164,14 @@ function toGalleryPainting(r: Record<string, unknown>): GalleryPainting {
         }
       : undefined
 
-  const { thumbnailUrl, fullUrl } = buildUrls(publicId, crop, corners, colorSettings)
+  const { thumbnailUrl, fullUrl, originalUrl } = buildUrls(publicId, crop, corners, colorSettings)
 
   return {
     id: publicId,
     publicId,
     thumbnailUrl,
     fullUrl,
+    originalUrl,
     title: ctx.title || undefined,
     year,
     dimensions: ctx.dimensions || undefined,
