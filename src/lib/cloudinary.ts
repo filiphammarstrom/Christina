@@ -56,11 +56,20 @@ function buildUrls(
 
   if (corners) {
     const { tl, tr, br, bl } = corners
-    const x = Math.round(Math.min(tl.x, bl.x))
-    const y = Math.round(Math.min(tl.y, tr.y))
-    const w = Math.round(Math.max(tr.x, br.x) - x)
-    const h = Math.round(Math.max(bl.y, br.y) - y)
-    perspectiveTransform.push({ crop: 'crop', x, y, width: w, height: h })
+    // Natural output size: average of opposite quad edge lengths
+    const outW = Math.round(
+      (Math.hypot(tr.x - tl.x, tr.y - tl.y) + Math.hypot(br.x - bl.x, br.y - bl.y)) / 2
+    )
+    const outH = Math.round(
+      (Math.hypot(bl.x - tl.x, bl.y - tl.y) + Math.hypot(br.x - tr.x, br.y - tr.y)) / 2
+    )
+    // e_distort maps source quad corners → output rectangle corners (perspective correction)
+    perspectiveTransform.push({
+      effect: `distort:${Math.round(tl.x)}:${Math.round(tl.y)}:${Math.round(tr.x)}:${Math.round(tr.y)}:${Math.round(br.x)}:${Math.round(br.y)}:${Math.round(bl.x)}:${Math.round(bl.y)}`,
+      width: outW,
+      height: outH,
+      crop: 'crop',
+    })
     if (corners.rotation) {
       perspectiveTransform.push({ angle: Math.round(corners.rotation) })
     }

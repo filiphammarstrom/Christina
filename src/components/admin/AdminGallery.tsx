@@ -64,11 +64,18 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
   ): string {
     const parts: string[] = []
     if (corners) {
-      const x = Math.round(Math.min(corners.tl.x, corners.bl.x))
-      const y = Math.round(Math.min(corners.tl.y, corners.tr.y))
-      const w = Math.round(Math.max(corners.tr.x, corners.br.x) - x)
-      const h = Math.round(Math.max(corners.bl.y, corners.br.y) - y)
-      parts.push(`c_crop,x_${x},y_${y},w_${w},h_${h}`)
+      const { tl, tr, br, bl } = corners
+      const outW = Math.round(
+        (Math.hypot(tr.x - tl.x, tr.y - tl.y) + Math.hypot(br.x - bl.x, br.y - bl.y)) / 2
+      )
+      const outH = Math.round(
+        (Math.hypot(bl.x - tl.x, bl.y - tl.y) + Math.hypot(br.x - tr.x, br.y - tr.y)) / 2
+      )
+      const tlx = Math.round(tl.x), tly = Math.round(tl.y)
+      const trx = Math.round(tr.x), tr_y = Math.round(tr.y)
+      const brx = Math.round(br.x), bry = Math.round(br.y)
+      const blx = Math.round(bl.x), bly = Math.round(bl.y)
+      parts.push(`w_${outW},h_${outH},c_crop,e_distort:${tlx}:${tly}:${trx}:${tr_y}:${brx}:${bry}:${blx}:${bly}`)
       if (corners.rotation) parts.push(`a_${Math.round(corners.rotation)}`)
     }
     const vibrance = colorSettings?.vibrance ?? 60
