@@ -282,6 +282,7 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
           publicId: data.public_id,
           thumbnailUrl: data.secure_url,
           fullUrl: data.secure_url,
+          originalUrl: `https://res.cloudinary.com/${cloudName}/image/upload/w_1600,c_limit,q_85,f_jpg/${data.public_id}`,
           available: true,
           originalWidth: data.width,
           originalHeight: data.height,

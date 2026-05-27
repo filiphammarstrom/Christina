@@ -51,7 +51,7 @@ function buildUrls(
   crop?: Crop,
   corners?: Corners,
   colorSettings?: ColorSettings,
-): { thumbnailUrl: string; fullUrl: string } {
+): { thumbnailUrl: string; fullUrl: string; originalUrl: string } {
   const perspectiveTransform: object[] = []
 
   if (corners) {
@@ -97,7 +97,13 @@ function buildUrls(
     secure: true,
   })
 
-  return { thumbnailUrl, fullUrl }
+  // Original image without any crop or colour transforms — used by CropModal
+  const originalUrl = cloudinary.url(publicId, {
+    transformation: [{ width: 1600, crop: 'limit', quality: 85, fetch_format: 'jpg' }],
+    secure: true,
+  })
+
+  return { thumbnailUrl, fullUrl, originalUrl }
 }
 
 function toGalleryPainting(r: Record<string, unknown>): GalleryPainting {
@@ -149,13 +155,14 @@ function toGalleryPainting(r: Record<string, unknown>): GalleryPainting {
         }
       : undefined
 
-  const { thumbnailUrl, fullUrl } = buildUrls(publicId, crop, corners, colorSettings)
+  const { thumbnailUrl, fullUrl, originalUrl } = buildUrls(publicId, crop, corners, colorSettings)
 
   return {
     id: publicId,
     publicId,
     thumbnailUrl,
     fullUrl,
+    originalUrl,
     title: ctx.title || undefined,
     year,
     dimensions: ctx.dimensions || undefined,
