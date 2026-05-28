@@ -21,11 +21,13 @@ interface CloudinaryContext {
   crop_w?: string
   crop_h?: string
   crop_rotation?: string
-  // Four-corner perspective correction
+  // Four-corner perspective correction (stored for re-editing in CropModal)
   corner_tl_x?: string; corner_tl_y?: string
   corner_tr_x?: string; corner_tr_y?: string
   corner_br_x?: string; corner_br_y?: string
   corner_bl_x?: string; corner_bl_y?: string
+  // Server-side perspective-corrected image (produced by save-crop route)
+  corrected_public_id?: string
   // Per-image color settings
   color_vibrance?: string
   color_improve?: string
@@ -51,62 +53,38 @@ function buildUrls(
   crop?: Crop,
   corners?: Corners,
   colorSettings?: ColorSettings,
+  correctedPublicId?: string,
 ): { thumbnailUrl: string; fullUrl: string; originalUrl: string } {
   const perspectiveTransform: object[] = []
+  // displayId is the corrected image if available, otherwise the original
+  const displayId = correctedPublicId || publicId
 
-  if (corners) {
-    const { tl, tr, br, bl } = corners
-    const r = Math.round
-
-    // Bounding box of all 4 corners
-    const bx = r(Math.min(tl.x, tr.x, bl.x, br.x))
-    const by = r(Math.min(tl.y, tr.y, bl.y, br.y))
-    const bw = r(Math.max(tl.x, tr.x, bl.x, br.x)) - bx
-    const bh = r(Math.max(tl.y, tr.y, bl.y, br.y)) - by
-
-    // Output dimensions: use the WIDER of each pair of opposite edges.
-    // The wider edge is closer to the camera (less perspective foreshortening),
-    // so it better represents the painting's true physical size.
-    const outW = r(Math.max(
-      Math.hypot(tr.x - tl.x, tr.y - tl.y),  // top edge
-      Math.hypot(br.x - bl.x, br.y - bl.y),  // bottom edge
-    ))
-    const outH = r(Math.max(
-      Math.hypot(bl.x - tl.x, bl.y - tl.y),  // left edge
-      Math.hypot(br.x - tr.x, br.y - tr.y),  // right edge
-    ))
-
-    // Step 1: crop to bounding box (removes background / frame)
-    perspectiveTransform.push({ crop: 'crop', x: bx, y: by, width: bw, height: bh })
-
-    // Step 2: perspective correction — e_distort with coords relative to the
-    // already-cropped bounding-box image, separate step to avoid c_crop conflict
-    perspectiveTransform.push({
-      effect: `distort:${r(tl.x - bx)}:${r(tl.y - by)}:${r(tr.x - bx)}:${r(tr.y - by)}:${r(br.x - bx)}:${r(br.y - by)}:${r(bl.x - bx)}:${r(bl.y - by)}`,
-      width: outW,
-      height: outH,
-      crop: 'crop',
-    })
-
-    if (corners.rotation) {
-      perspectiveTransform.push({ angle: r(corners.rotation) })
-    }
-  } else if (crop) {
-    perspectiveTransform.push({
-      crop: 'crop',
-      x: Math.round(crop.x),
-      y: Math.round(crop.y),
-      width: Math.round(crop.w),
-      height: Math.round(crop.h),
-    })
-    if (crop.rotation) {
-      perspectiveTransform.push({ angle: Math.round(crop.rotation) })
+  if (!correctedPublicId) {
+    // No server-corrected image yet — fall back to simple bounding-box crop
+    if (corners) {
+      const { tl, tr, br, bl } = corners
+      const r = Math.round
+      const bx = r(Math.min(tl.x, tr.x, bl.x, br.x))
+      const by = r(Math.min(tl.y, tr.y, bl.y, br.y))
+      const bw = r(Math.max(tl.x, tr.x, bl.x, br.x)) - bx
+      const bh = r(Math.max(tl.y, tr.y, bl.y, br.y)) - by
+      perspectiveTransform.push({ crop: 'crop', x: bx, y: by, width: bw, height: bh })
+      if (corners.rotation) perspectiveTransform.push({ angle: r(corners.rotation) })
+    } else if (crop) {
+      perspectiveTransform.push({
+        crop: 'crop',
+        x: Math.round(crop.x),
+        y: Math.round(crop.y),
+        width: Math.round(crop.w),
+        height: Math.round(crop.h),
+      })
+      if (crop.rotation) perspectiveTransform.push({ angle: Math.round(crop.rotation) })
     }
   }
 
   const enhance = buildEnhance(colorSettings)
 
-  const thumbnailUrl = cloudinary.url(publicId, {
+  const thumbnailUrl = cloudinary.url(displayId, {
     transformation: [
       ...perspectiveTransform,
       ...enhance,
@@ -115,7 +93,7 @@ function buildUrls(
     secure: true,
   })
 
-  const fullUrl = cloudinary.url(publicId, {
+  const fullUrl = cloudinary.url(displayId, {
     transformation: [
       ...perspectiveTransform,
       ...enhance,
@@ -124,7 +102,8 @@ function buildUrls(
     secure: true,
   })
 
-  // Original image without any crop or colour transforms — used by CropModal
+  // Original image without any transforms — used by CropModal so corner coords
+  // map directly to the original pixel space
   const originalUrl = cloudinary.url(publicId, {
     transformation: [{ width: 1600, crop: 'limit', quality: 85, fetch_format: 'jpg' }],
     secure: true,
@@ -182,7 +161,11 @@ function toGalleryPainting(r: Record<string, unknown>): GalleryPainting {
         }
       : undefined
 
-  const { thumbnailUrl, fullUrl, originalUrl } = buildUrls(publicId, crop, corners, colorSettings)
+  const correctedPublicId = ctx.corrected_public_id || undefined
+
+  const { thumbnailUrl, fullUrl, originalUrl } = buildUrls(
+    publicId, crop, corners, colorSettings, correctedPublicId
+  )
 
   return {
     id: publicId,
@@ -202,6 +185,7 @@ function toGalleryPainting(r: Record<string, unknown>): GalleryPainting {
     colorSettings,
     originalWidth: r.width as number,
     originalHeight: r.height as number,
+    correctedPublicId,
   }
 }
 

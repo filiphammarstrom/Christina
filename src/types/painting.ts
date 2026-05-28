@@ -46,4 +46,5 @@ export interface GalleryPainting {
   colorSettings?: ColorSettings
   originalWidth?: number
   originalHeight?: number
+  correctedPublicId?: string  // server-side perspective-corrected image
 }

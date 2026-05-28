@@ -5,7 +5,7 @@ import type { GalleryPainting, Corners } from '@/types/painting'
 
 interface Props {
   painting: GalleryPainting
-  onSave: (corners: Corners) => void
+  onSave: (corners: Corners, correctedPublicId?: string) => void
   onClose: () => void
 }
 
@@ -137,12 +137,18 @@ export default function CropModal({ painting, onSave, onClose }: Props) {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ publicId: painting.publicId, corners: originalCorners }),
+      body: JSON.stringify({
+        publicId: painting.publicId,
+        corners: originalCorners,
+        originalWidth: painting.originalWidth,
+        originalHeight: painting.originalHeight,
+      }),
     })
     setSaving(false)
 
     if (res.ok) {
-      onSave(originalCorners)
+      const data = await res.json().catch(() => ({}))
+      onSave(originalCorners, data.correctedPublicId)
     } else {
       alert('Kunde inte spara. Försök igen.')
     }
@@ -278,7 +284,7 @@ export default function CropModal({ painting, onSave, onClose }: Props) {
             disabled={saving || !corners || !loaded}
             className="bg-[#C4A35A] text-white text-sm px-6 py-2.5 font-medium disabled:opacity-40 hover:bg-[#b8925a] transition-colors"
           >
-            {saving ? 'Sparar…' : 'Spara korrigering'}
+            {saving ? 'Sparar och korrigerar…' : 'Spara korrigering'}
           </button>
           <button
             onClick={handleReset}
