@@ -56,22 +56,40 @@ function buildUrls(
 
   if (corners) {
     const { tl, tr, br, bl } = corners
-    // Natural output size: average of opposite quad edge lengths
-    const outW = Math.round(
-      (Math.hypot(tr.x - tl.x, tr.y - tl.y) + Math.hypot(br.x - bl.x, br.y - bl.y)) / 2
-    )
-    const outH = Math.round(
-      (Math.hypot(bl.x - tl.x, bl.y - tl.y) + Math.hypot(br.x - tr.x, br.y - tr.y)) / 2
-    )
-    // e_distort maps source quad corners → output rectangle corners (perspective correction)
+    const r = Math.round
+
+    // Bounding box of all 4 corners
+    const bx = r(Math.min(tl.x, tr.x, bl.x, br.x))
+    const by = r(Math.min(tl.y, tr.y, bl.y, br.y))
+    const bw = r(Math.max(tl.x, tr.x, bl.x, br.x)) - bx
+    const bh = r(Math.max(tl.y, tr.y, bl.y, br.y)) - by
+
+    // Output dimensions: use the WIDER of each pair of opposite edges.
+    // The wider edge is closer to the camera (less perspective foreshortening),
+    // so it better represents the painting's true physical size.
+    const outW = r(Math.max(
+      Math.hypot(tr.x - tl.x, tr.y - tl.y),  // top edge
+      Math.hypot(br.x - bl.x, br.y - bl.y),  // bottom edge
+    ))
+    const outH = r(Math.max(
+      Math.hypot(bl.x - tl.x, bl.y - tl.y),  // left edge
+      Math.hypot(br.x - tr.x, br.y - tr.y),  // right edge
+    ))
+
+    // Step 1: crop to bounding box (removes background / frame)
+    perspectiveTransform.push({ crop: 'crop', x: bx, y: by, width: bw, height: bh })
+
+    // Step 2: perspective correction — e_distort with coords relative to the
+    // already-cropped bounding-box image, separate step to avoid c_crop conflict
     perspectiveTransform.push({
-      effect: `distort:${Math.round(tl.x)}:${Math.round(tl.y)}:${Math.round(tr.x)}:${Math.round(tr.y)}:${Math.round(br.x)}:${Math.round(br.y)}:${Math.round(bl.x)}:${Math.round(bl.y)}`,
+      effect: `distort:${r(tl.x - bx)}:${r(tl.y - by)}:${r(tr.x - bx)}:${r(tr.y - by)}:${r(br.x - bx)}:${r(br.y - by)}:${r(bl.x - bx)}:${r(bl.y - by)}`,
       width: outW,
       height: outH,
       crop: 'crop',
     })
+
     if (corners.rotation) {
-      perspectiveTransform.push({ angle: Math.round(corners.rotation) })
+      perspectiveTransform.push({ angle: r(corners.rotation) })
     }
   } else if (crop) {
     perspectiveTransform.push({

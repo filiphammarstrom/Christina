@@ -65,18 +65,22 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
     const parts: string[] = []
     if (corners) {
       const { tl, tr, br, bl } = corners
-      const outW = Math.round(
-        (Math.hypot(tr.x - tl.x, tr.y - tl.y) + Math.hypot(br.x - bl.x, br.y - bl.y)) / 2
-      )
-      const outH = Math.round(
-        (Math.hypot(bl.x - tl.x, bl.y - tl.y) + Math.hypot(br.x - tr.x, br.y - tr.y)) / 2
-      )
-      const tlx = Math.round(tl.x), tly = Math.round(tl.y)
-      const trx = Math.round(tr.x), tr_y = Math.round(tr.y)
-      const brx = Math.round(br.x), bry = Math.round(br.y)
-      const blx = Math.round(bl.x), bly = Math.round(bl.y)
-      parts.push(`w_${outW},h_${outH},c_crop,e_distort:${tlx}:${tly}:${trx}:${tr_y}:${brx}:${bry}:${blx}:${bly}`)
-      if (corners.rotation) parts.push(`a_${Math.round(corners.rotation)}`)
+      const r = Math.round
+      const bx = r(Math.min(tl.x, tr.x, bl.x, br.x))
+      const by = r(Math.min(tl.y, tr.y, bl.y, br.y))
+      const bw = r(Math.max(tl.x, tr.x, bl.x, br.x)) - bx
+      const bh = r(Math.max(tl.y, tr.y, bl.y, br.y)) - by
+      const outW = r(Math.max(
+        Math.hypot(tr.x - tl.x, tr.y - tl.y),
+        Math.hypot(br.x - bl.x, br.y - bl.y),
+      ))
+      const outH = r(Math.max(
+        Math.hypot(bl.x - tl.x, bl.y - tl.y),
+        Math.hypot(br.x - tr.x, br.y - tr.y),
+      ))
+      parts.push(`c_crop,x_${bx},y_${by},w_${bw},h_${bh}`)
+      parts.push(`c_crop,e_distort:${r(tl.x-bx)}:${r(tl.y-by)}:${r(tr.x-bx)}:${r(tr.y-by)}:${r(br.x-bx)}:${r(br.y-by)}:${r(bl.x-bx)}:${r(bl.y-by)},w_${outW},h_${outH}`)
+      if (corners.rotation) parts.push(`a_${r(corners.rotation)}`)
     }
     const vibrance = colorSettings?.vibrance ?? 60
     const improve = colorSettings?.improve ?? 'indoor'
