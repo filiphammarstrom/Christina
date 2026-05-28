@@ -200,7 +200,8 @@ export async function fetchAllPaintings(): Promise<GalleryPainting[]> {
       resource_type: 'image',
       context: true,
     })
-    resources = result.resources as Record<string, unknown>[]
+    resources = (result.resources as Record<string, unknown>[])
+      .filter(r => !(r.public_id as string).endsWith('_corrected'))
     console.log(`Cloudinary: ${resources.length} bilder med prefix "paintings"`)
   } catch (err) {
     console.error('Cloudinary prefix-sökning misslyckades:', err)
@@ -214,7 +215,8 @@ export async function fetchAllPaintings(): Promise<GalleryPainting[]> {
         resource_type: 'image',
         context: true,
       })
-      resources = result.resources as Record<string, unknown>[]
+      resources = (result.resources as Record<string, unknown>[])
+        .filter(r => !(r.public_id as string).endsWith('_corrected'))
       console.log(`Cloudinary: ${resources.length} bilder totalt (utan prefix)`)
     } catch (err) {
       console.error('Cloudinary root-sökning misslyckades:', err)
