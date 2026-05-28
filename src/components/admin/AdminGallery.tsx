@@ -122,13 +122,21 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
     return res.json()
   }
 
-  async function saveCorners(publicId: string, corners: Corners) {
-    await fetch('/api/admin/save-crop', {
+  async function saveCorners(
+    publicId: string,
+    corners: Corners,
+    originalWidth?: number,
+    originalHeight?: number,
+  ): Promise<string | undefined> {
+    const res = await fetch('/api/admin/save-crop', {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ publicId, corners }),
+      body: JSON.stringify({ publicId, corners, originalWidth, originalHeight }),
     })
+    if (!res.ok) return undefined
+    const data = await res.json().catch(() => ({}))
+    return data.correctedPublicId as string | undefined
   }
 
   function applyCornersToPainting(publicId: string, corners: Corners, correctedPublicId?: string) {
@@ -151,8 +159,8 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
       try {
         const corners = await runAutoCropForPainting(p)
         if (corners) {
-          await saveCorners(p.publicId, corners)
-          applyCornersToPainting(p.publicId, corners)
+          const correctedPublicId = await saveCorners(p.publicId, corners, p.originalWidth, p.originalHeight)
+          applyCornersToPainting(p.publicId, corners, correctedPublicId)
         }
       } catch {
         // skip failed
@@ -295,10 +303,10 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
         setPaintings(prev => [newPainting, ...prev])
 
         // Auto-crop with AI immediately after upload (in background — don't block next file)
-        runAutoCropForPainting(newPainting).then(corners => {
+        runAutoCropForPainting(newPainting).then(async corners => {
           if (corners) {
-            saveCorners(data.public_id, corners)
-            applyCornersToPainting(data.public_id, corners)
+            const correctedPublicId = await saveCorners(data.public_id, corners, data.width, data.height)
+            applyCornersToPainting(data.public_id, corners, correctedPublicId)
           }
         })
       }
