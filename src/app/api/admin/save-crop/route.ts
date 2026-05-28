@@ -3,6 +3,8 @@ import { v2 as cloudinary } from 'cloudinary'
 import type { Corners } from '@/types/painting'
 import { warpPerspective, naturalOutputSize } from '@/lib/perspective'
 
+export const maxDuration = 60
+
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
@@ -62,7 +64,7 @@ export async function POST(request: NextRequest) {
     let correctedPublicId: string | undefined
     try {
       const cloudName = process.env.CLOUDINARY_CLOUD_NAME!
-      const origUrl = `https://res.cloudinary.com/${cloudName}/image/upload/w_1600,c_limit,q_85,f_jpg/${publicId}`
+      const origUrl = `https://res.cloudinary.com/${cloudName}/image/upload/w_1000,c_limit,q_85,f_jpg/${publicId}`
 
       const imgRes = await fetch(origUrl)
       if (!imgRes.ok) throw new Error(`Failed to download image: ${imgRes.status}`)
