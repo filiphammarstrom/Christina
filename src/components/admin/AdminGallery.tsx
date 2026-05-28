@@ -61,25 +61,19 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
     publicId: string,
     corners?: Corners,
     colorSettings?: ColorSettings,
+    correctedPublicId?: string,
   ): string {
+    const displayId = correctedPublicId ?? publicId
     const parts: string[] = []
-    if (corners) {
+    if (!correctedPublicId && corners) {
+      // Fallback: bounding-box crop until server-side correction is available
       const { tl, tr, br, bl } = corners
       const r = Math.round
       const bx = r(Math.min(tl.x, tr.x, bl.x, br.x))
       const by = r(Math.min(tl.y, tr.y, bl.y, br.y))
       const bw = r(Math.max(tl.x, tr.x, bl.x, br.x)) - bx
       const bh = r(Math.max(tl.y, tr.y, bl.y, br.y)) - by
-      const outW = r(Math.max(
-        Math.hypot(tr.x - tl.x, tr.y - tl.y),
-        Math.hypot(br.x - bl.x, br.y - bl.y),
-      ))
-      const outH = r(Math.max(
-        Math.hypot(bl.x - tl.x, bl.y - tl.y),
-        Math.hypot(br.x - tr.x, br.y - tr.y),
-      ))
       parts.push(`c_crop,x_${bx},y_${by},w_${bw},h_${bh}`)
-      parts.push(`c_crop,e_distort:${r(tl.x-bx)}:${r(tl.y-by)}:${r(tr.x-bx)}:${r(tr.y-by)}:${r(br.x-bx)}:${r(br.y-by)}:${r(bl.x-bx)}:${r(bl.y-by)},w_${outW},h_${outH}`)
       if (corners.rotation) parts.push(`a_${r(corners.rotation)}`)
     }
     const vibrance = colorSettings?.vibrance ?? 60
@@ -91,7 +85,7 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
     if (sharpen > 0) parts.push(`e_sharpen:${sharpen}`)
     if (brightness !== 0) parts.push(`e_brightness:${brightness}`)
     parts.push('w_900,c_limit,q_auto,f_auto')
-    return `https://res.cloudinary.com/${cloudName}/image/upload/${parts.join('/')}/${publicId}`
+    return `https://res.cloudinary.com/${cloudName}/image/upload/${parts.join('/')}/${displayId}`
   }
 
   async function resetCrop(publicId: string) {
@@ -104,8 +98,8 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
     setPaintings(prev =>
       prev.map(p => {
         if (p.publicId !== publicId) return p
-        const baseUrl = buildThumbnailUrl(publicId, undefined, p.colorSettings) + `?v=${Date.now()}`
-        return { ...p, corners: undefined, crop: undefined, thumbnailUrl: baseUrl }
+        const baseUrl = buildThumbnailUrl(publicId, undefined, p.colorSettings, undefined) + `?v=${Date.now()}`
+        return { ...p, corners: undefined, crop: undefined, correctedPublicId: undefined, thumbnailUrl: baseUrl }
       })
     )
   }
@@ -137,12 +131,12 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
     })
   }
 
-  function applyCornersToPainting(publicId: string, corners: Corners) {
+  function applyCornersToPainting(publicId: string, corners: Corners, correctedPublicId?: string) {
     setPaintings(prev =>
       prev.map(p => {
         if (p.publicId !== publicId) return p
-        const newUrl = buildThumbnailUrl(publicId, corners, p.colorSettings) + `?v=${Date.now()}`
-        return { ...p, corners, thumbnailUrl: newUrl }
+        const newUrl = buildThumbnailUrl(publicId, corners, p.colorSettings, correctedPublicId) + `?v=${Date.now()}`
+        return { ...p, corners, correctedPublicId, thumbnailUrl: newUrl }
       })
     )
   }
@@ -170,9 +164,9 @@ export default function AdminGallery({ initialPaintings, cloudName }: Props) {
     setAutoCropProgress(null)
   }
 
-  function handleCropSaved(corners: Corners) {
+  function handleCropSaved(corners: Corners, correctedPublicId?: string) {
     if (!cropTarget) return
-    applyCornersToPainting(cropTarget.publicId, corners)
+    applyCornersToPainting(cropTarget.publicId, corners, correctedPublicId)
     setCropTarget(null)
   }
 
